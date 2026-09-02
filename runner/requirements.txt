@@ -1,0 +1,4 @@
+smartapi-python>=1.5.5
+websocket-client>=1.8.0
+requests>=2.32.0
+pyotp>=2.9.0
