@@ -1,12 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-// Contract tests for the dashboard status summary.
-// The current dashboard does not expose this function yet, so these tests
-// intentionally fail until the dashboard implementation is added.
 import {buildStatusSummary} from '../dashboard_status.js';
 
-test('buildStatusSummary reports online state and today's counts', () => {
+test('buildStatusSummary reports online state and today\'s counts', () => {
   const state = {
     trades: [
       {status: 'ELIGIBLE'},
