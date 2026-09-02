@@ -20,3 +20,9 @@ def call_with_backoff(api_call, retries=3, sleep=time.sleep):
                 raise
             sleep(5 * (2 ** attempt))
     raise last_error
+
+
+def seed_candle_request(api_call, sleep=time.sleep, interval=2):
+    result = call_with_backoff(api_call, sleep=sleep)
+    sleep(interval)
+    return result
