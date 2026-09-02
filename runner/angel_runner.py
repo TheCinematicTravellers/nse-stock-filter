@@ -1,6 +1,10 @@
-import os,json,time,datetime as dt,threading,queue,requests,pyotp
+import os
+from dotenv import load_dotenv
+load_dotenv()
+import json,time,datetime as dt,threading,queue,requests,pyotp
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
+from angel_rate_limit import seed_candle_request
 
 IST=dt.timezone(dt.timedelta(hours=5,minutes=30))
 BASE=os.environ.get('SCANNER_BASE_URL','').rstrip('/')
@@ -25,7 +29,7 @@ def seed():
  for i,x in enumerate(instruments,1):
   try:
    p={'exchange':'NSE','symboltoken':str(x['token']),'interval':'FIVE_MINUTE','fromdate':from_dt.strftime('%Y-%m-%d %H:%M'),'todate':now.strftime('%Y-%m-%d %H:%M')}
-   raw=smart.getCandleData(p).get('data') or [];candles=[]
+   raw=seed_candle_request(lambda: smart.getCandleData(p)).get('data') or [];candles=[]
    current_bucket=now.replace(minute=(now.minute//5)*5,second=0,microsecond=0)
    for row in raw:
     t=dt.datetime.fromisoformat(str(row[0]).replace('Z','+00:00'))
