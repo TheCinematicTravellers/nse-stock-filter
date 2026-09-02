@@ -1,4 +1,4 @@
-import os,json,time,datetime as dt,threading,requests,pyotp
+import os,json,time,datetime as dt,threading,queue,requests,pyotp
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 
@@ -40,12 +40,16 @@ def seed():
 by_token={str(x['token']):x['symbol'] for x in instruments}
 ws=SmartWebSocketV2(auth,API_KEY,CLIENT,feed)
 current={};lock=threading.Lock();last_hard_exit_date=None
+post_queue=queue.Queue()
 
 def bucket(ts):
  t=dt.datetime.fromtimestamp(ts/1000,tz=IST);return t.replace(minute=(t.minute//5)*5,second=0,microsecond=0)
-def flush(symbol,bar):
- try:post('/api/ingest',{'symbol':symbol,'candle':bar});print('5m',symbol,bar['time'],bar['close'],flush=True)
- except Exception as e:print('post failed',symbol,e,flush=True)
+def worker():
+ while True:
+  symbol,bar=post_queue.get()
+  try:post('/api/ingest',{'symbol':symbol,'candle':bar});print('5m',symbol,bar['time'],bar['close'],flush=True)
+  except Exception as e:print('post failed',symbol,e,flush=True)
+  finally:post_queue.task_done()
 
 def on_data(data):
  try:
@@ -55,7 +59,7 @@ def on_data(data):
   with lock:
    old=current.get(symbol)
    if old and old['time']!=key:
-    finished=current.pop(symbol);threading.Thread(target=flush,args=(symbol,finished),daemon=True).start()
+    finished=current.pop(symbol);post_queue.put((symbol,finished))
    x=current.get(symbol)
    if x is None:current[symbol]={'time':key,'open':px,'high':px,'low':px,'close':px}
    else:x['high']=max(x['high'],px);x['low']=min(x['low'],px);x['close']=px
@@ -81,4 +85,4 @@ def on_close(*args):print('WS closed',args,flush=True)
 ws.on_data=on_data;ws.on_open=on_open;ws.on_error=on_error;ws.on_close=on_close
 
 if __name__=='__main__':
- seed();threading.Thread(target=hard_exit_loop,daemon=True).start();ws.connect()
+ threading.Thread(target=worker,daemon=True).start();seed();threading.Thread(target=hard_exit_loop,daemon=True).start();ws.connect()
