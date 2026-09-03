@@ -7,6 +7,7 @@ from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 from angel_rate_limit import seed_candle_request
 from ws_utils import subscribe_in_batches
+from ws_compat import close_callback
 
 IST=dt.timezone(dt.timedelta(hours=5,minutes=30))
 BASE=os.environ.get('SCANNER_BASE_URL','').rstrip('/')
@@ -83,13 +84,18 @@ def hard_exit_loop():
    last_hard_exit_date=now.date()
   time.sleep(5)
 
-def on_open():
+def on_open(wsapp):
  print(f'Connected. Subscribing {len(instruments)} symbols in batches of 50.',flush=True)
  subscribe_in_batches(ws, instruments, batch_size=50)
  print('Subscription requests sent.',flush=True)
 def on_error(*args):print('WS error',args,flush=True)
 def on_close(*args):print('WS closed',args,flush=True)
-ws.on_data=on_data;ws.on_open=on_open;ws.on_error=on_error;ws.on_close=on_close
+ws.on_data=on_data
+ws.on_open=on_open
+ws.on_error=on_error
+ws.on_close=on_close
+_sdk_on_close=ws._on_close
+ws._on_close=lambda wsapp,close_status_code=None,close_msg=None:close_callback(_sdk_on_close,wsapp,close_status_code,close_msg)
 
 if __name__=='__main__':
  threading.Thread(target=worker,daemon=True).start();seed();threading.Thread(target=hard_exit_loop,daemon=True).start();ws.connect()
