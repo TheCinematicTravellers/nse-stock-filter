@@ -7,7 +7,7 @@ from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 from angel_rate_limit import seed_candle_request
 from ws_utils import subscribe_in_batches
-from ws_compat import close_callback
+from ws_compat import close_callback, data_callback
 
 IST=dt.timezone(dt.timedelta(hours=5,minutes=30))
 BASE=os.environ.get('SCANNER_BASE_URL','').rstrip('/')
@@ -58,7 +58,7 @@ def worker():
   except Exception as e:print('post failed',symbol,e,flush=True)
   finally:post_queue.task_done()
 
-def on_data(wsapp,data,data_type=None,continue_flag=None):
+def on_data(data):
  try:
   token=str(data['token']);symbol=by_token.get(token)
   if not symbol:return
@@ -90,7 +90,7 @@ def on_open(wsapp):
  print('Subscription requests sent.',flush=True)
 def on_error(*args):print('WS error',args,flush=True)
 def on_close(*args):print('WS closed',args,flush=True)
-ws.on_data=on_data
+ws.on_data=lambda wsapp,data,data_type=None,continue_flag=None:data_callback(on_data,wsapp,data,data_type,continue_flag)
 ws.on_open=on_open
 ws.on_error=on_error
 ws.on_close=on_close
