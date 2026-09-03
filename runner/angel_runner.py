@@ -58,7 +58,7 @@ def worker():
   except Exception as e:print('post failed',symbol,e,flush=True)
   finally:post_queue.task_done()
 
-def on_data(data):
+def on_data(wsapp,data,data_type=None,continue_flag=None):
  try:
   token=str(data['token']);symbol=by_token.get(token)
   if not symbol:return
