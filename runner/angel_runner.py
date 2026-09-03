@@ -6,6 +6,7 @@ import os,json,time,datetime as dt,threading,queue,requests,pyotp
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 from angel_rate_limit import seed_candle_request
+from ws_utils import subscribe_in_batches
 
 IST=dt.timezone(dt.timedelta(hours=5,minutes=30))
 BASE=os.environ.get('SCANNER_BASE_URL','').rstrip('/')
@@ -83,8 +84,9 @@ def hard_exit_loop():
   time.sleep(5)
 
 def on_open():
- print(f'Connected. Subscribing {len(instruments)} symbols.',flush=True)
- ws.subscribe('inside50',1,[{'exchangeType':1,'tokens':[str(x['token']) for x in instruments]}])
+ print(f'Connected. Subscribing {len(instruments)} symbols in batches of 50.',flush=True)
+ subscribe_in_batches(ws, instruments, batch_size=50)
+ print('Subscription requests sent.',flush=True)
 def on_error(*args):print('WS error',args,flush=True)
 def on_close(*args):print('WS closed',args,flush=True)
 ws.on_data=on_data;ws.on_open=on_open;ws.on_error=on_error;ws.on_close=on_close
