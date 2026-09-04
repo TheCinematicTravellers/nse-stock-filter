@@ -8,6 +8,7 @@ from angel_rate_limit import seed_candle_request
 from ws_utils import subscribe_in_batches
 from ws_compat import close_callback, data_callback
 from batch_queue import BatchAccumulator
+from instrument_filter import filter_instruments
 
 IST=dt.timezone(dt.timedelta(hours=5,minutes=30))
 BASE=os.environ.get('SCANNER_BASE_URL','').rstrip('/')
@@ -18,6 +19,8 @@ if not BASE or not SECRET: raise SystemExit('Safety stop: set SCANNER_BASE_URL a
 if not all([API_KEY,CLIENT,PWD,TOTP_SECRET]): raise SystemExit('Safety stop: set all ANGEL_* credentials before starting.')
 with open(INSTRUMENTS,encoding='utf-8') as f: instruments=json.load(f)
 if not instruments: raise SystemExit('No instruments configured.')
+instruments=filter_instruments(instruments)
+if not instruments: raise SystemExit('No instruments remain after 100-4000 universe filter.')
 HEAD={'Authorization':f'Bearer {SECRET}','Content-Type':'application/json'}
 
 def post(path,payload):
@@ -114,4 +117,5 @@ _sdk_on_close=ws._on_close
 ws._on_close=lambda wsapp,close_status_code=None,close_msg=None:close_callback(_sdk_on_close,wsapp,close_status_code,close_msg)
 
 if __name__=='__main__':
+ print(f'Filtered universe: {len(instruments)} stocks (CMP band ₹100-₹4000).',flush=True)
  threading.Thread(target=worker,daemon=True).start();seed();threading.Thread(target=hard_exit_loop,daemon=True).start();ws.connect()
