@@ -1,7 +1,7 @@
 import time
 
 class BatchAccumulator:
-    def __init__(self, coalesce_seconds=1.0):
+    def __init__(self, coalesce_seconds=0.2):
         self.coalesce_seconds=float(coalesce_seconds)
         self.items={}
         self.first_at=None
