@@ -89,7 +89,8 @@ def main():
     ws.on_error = on_error
     ws.on_close = on_close
 
-    ws.connect()
+    thread = threading.Thread(target=ws.connect, daemon=True)
+    thread.start()
     done.wait(timeout=30)
 
     with lock:
