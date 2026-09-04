@@ -20,5 +20,9 @@ class BatchAccumulatorTests(unittest.TestCase):
         self.assertFalse(q.ready(now=10.5))
         self.assertTrue(q.ready(now=11.0))
 
+    def test_default_coalesce_window_is_latency_friendly(self):
+        q=BatchAccumulator()
+        self.assertLessEqual(q.coalesce_seconds,0.25)
+
 if __name__=='__main__':
     unittest.main()
