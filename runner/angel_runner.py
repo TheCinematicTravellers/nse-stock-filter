@@ -1,13 +1,13 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-
 import os,json,time,datetime as dt,threading,queue,requests,pyotp
 from SmartApi import SmartConnect
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 from angel_rate_limit import seed_candle_request
 from ws_utils import subscribe_in_batches
 from ws_compat import close_callback, data_callback
+from batch_queue import BatchAccumulator
 
 IST=dt.timezone(dt.timedelta(hours=5,minutes=30))
 BASE=os.environ.get('SCANNER_BASE_URL','').rstrip('/')
@@ -51,11 +51,27 @@ post_queue=queue.Queue()
 
 def bucket(ts):
  t=dt.datetime.fromtimestamp(ts/1000,tz=IST);return t.replace(minute=(t.minute//5)*5,second=0,microsecond=0)
+
 def worker():
  while True:
   symbol,bar=post_queue.get()
-  try:post('/api/ingest',{'symbol':symbol,'candle':bar});print('5m',symbol,bar['time'],bar['close'],flush=True)
-  except Exception as e:print('post failed',symbol,e,flush=True)
+  batch=BatchAccumulator(coalesce_seconds=1.0)
+  batch.add(symbol,bar)
+  deadline=time.monotonic()+batch.coalesce_seconds
+  while True:
+   remaining=deadline-time.monotonic()
+   if remaining<=0:break
+   try:
+    symbol,bar=post_queue.get(timeout=remaining)
+    batch.add(symbol,bar)
+    post_queue.task_done()
+   except queue.Empty:
+    break
+  payload=batch.pop_all()
+  try:
+   post('/api/ingest',{'candlesBySymbol':payload,'seed':False})
+   print(f'5m batch {len(payload)} symbols',flush=True)
+  except Exception as e:print('batch post failed',e,flush=True)
   finally:post_queue.task_done()
 
 def on_data(data):
