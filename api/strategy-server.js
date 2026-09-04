@@ -1,7 +1,7 @@
 const MAX_CANDLES=100;
 export function trendSide(c){if(c.ema20>c.ema50&&c.ema50>c.ema50_3)return'LONG';if(c.ema20<c.ema50&&c.ema50<c.ema50_3)return'SHORT';return null}
 function ema(values,p){if(!values.length)return null;const k=2/(p+1);let e=values[0];for(let i=1;i<values.length;i++)e=values[i]*k+e*(1-k);return e}
-function emaSeries(values,p){if(!values.length)return[];const k=2/(p+1);let e=values[0];const out=[e];for(let i=1;i<values.length;i++)e=values[i]*k+e*(1-k);return out}
+function emaSeries(values,p){if(!values.length)return[];const k=2/(p+1);let e=values[0];const out=[e];for(let i=1;i<values.length;i++){e=values[i]*k+e*(1-k);out.push(e)}return out}
 export function calc(candles){const closes=candles.map(x=>Number(x.close));const e20=ema(closes,20),e50Series=emaSeries(closes,50),e50=e50Series.at(-1);const e50_3=e50Series.length>=4?e50Series.at(-4):e50;return{ema20:e20,ema50:e50,ema50_3:e50_3}}
 const tm=c=>c.time.slice(11,16);const price=n=>Number(Number(n).toFixed(2));
 export function buildCandidate(symbol,mother,children,side,time){const entry=side==='LONG'?mother.high:mother.low,sl=side==='LONG'?mother.low:mother.high;return{id:`${symbol}-${mother.time}`,symbol,side,entry:price(entry),sl:price(sl),target:price(side==='LONG'?entry+(entry-sl):entry-(sl-entry)),motherTime:mother.time,motherHigh:mother.high,motherLow:mother.low,childCount:children.length,status:'ELIGIBLE',createdAt:time,ema50:price(children.at(-1).ema50)}}
