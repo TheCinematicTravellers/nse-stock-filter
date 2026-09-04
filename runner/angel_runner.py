@@ -58,7 +58,7 @@ def bucket(ts):
 def worker():
  while True:
   symbol,bar=post_queue.get()
-  batch=BatchAccumulator(coalesce_seconds=1.0)
+  batch=BatchAccumulator()
   batch.add(symbol,bar)
   deadline=time.monotonic()+batch.coalesce_seconds
   while True:
