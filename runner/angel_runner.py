@@ -107,8 +107,8 @@ def on_open(wsapp):
  print(f'Connected. Subscribing {len(instruments)} symbols in batches of 50.',flush=True)
  subscribe_in_batches(ws, instruments, batch_size=50)
  print('Subscription requests sent.',flush=True)
-def on_error(wsapp,error):print('WS error',(wsapp,error),flush=True)
-def on_close(wsapp,close_status_code,close_msg):print('WS closed',(wsapp,close_status_code,close_msg),flush=True)
+def on_error(wsapp, error):print('WS error',(wsapp,error),flush=True)
+def on_close(wsapp, close_status_code, close_msg):print('WS closed',(wsapp,close_status_code,close_msg),flush=True)
 ws.on_data=lambda wsapp,data,data_type=None,continue_flag=None:data_callback(on_data,wsapp,data,data_type,continue_flag)
 ws.on_open=on_open
 ws.on_error=on_error
