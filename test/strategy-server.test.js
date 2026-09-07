@@ -30,7 +30,7 @@ test('alert window blocks first and second candles',()=>{
  assert.equal(alertAllowed('2026-09-07T09:25:00+05:30'),true);
 });
 
-test('alert window blocks alerts after 3 PM',()=>{
+test('alert window blocks after 3 PM',()=>{
  assert.equal(alertAllowed('2026-09-07T15:00:00+05:30'),true);
  assert.equal(alertAllowed('2026-09-07T15:00:01+05:30'),false);
  assert.equal(alertAllowed('2026-09-07T15:13:00+05:30'),false);
