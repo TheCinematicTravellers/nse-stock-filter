@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {msg} from '../api/strategy-server.js';
+import {msg,alertAllowed} from '../api/strategy-server.js';
 
 test('ELIGIBLE message shows compact mother candle time and short icon',()=>{
  const t={symbol:'IEX',side:'SHORT',motherTime:'2026-09-04T14:00:00+05:30',motherHigh:120,motherLow:119.5,entry:119.5,target:119,sl:120};
@@ -22,4 +22,16 @@ test('ACTIVE message shows compact breakout candle time and side icon',()=>{
  const text=msg('ACTIVE',t);
  assert.match(text,/IEX 🔻 SHORT/);
  assert.match(text,/Breakout Candle: 14:10/);
+});
+
+test('alert window blocks first and second candles',()=>{
+ assert.equal(alertAllowed('2026-09-07T09:15:00+05:30'),false);
+ assert.equal(alertAllowed('2026-09-07T09:20:00+05:30'),false);
+ assert.equal(alertAllowed('2026-09-07T09:25:00+05:30'),true);
+});
+
+test('alert window blocks alerts after 3 PM',()=>{
+ assert.equal(alertAllowed('2026-09-07T15:00:00+05:30'),true);
+ assert.equal(alertAllowed('2026-09-07T15:00:01+05:30'),false);
+ assert.equal(alertAllowed('2026-09-07T15:13:00+05:30'),false);
 });
