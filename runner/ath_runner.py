@@ -6,7 +6,7 @@ Responsibilities:
 - Build the current NSE equity universe from NSE's official equity/ETF lists.
 - Match it to Angel One cash-market tokens.
 - Seed corporate-action-adjusted ATH baselines from Yahoo Finance.
-- After 17:00 IST, send the completed daily OHLC snapshot to /api/ath/daily.
+- After 17:00 IST, fetch the completed daily OHLC snapshot in batched market-data requests and send it to /api/ath/daily.
 - During market hours, subscribe only to active D+1 setups and forward ticks to /api/ath/live.
 """
 from dotenv import load_dotenv
@@ -145,11 +145,7 @@ def yahoo_adjusted_ath(symbol):
 
             if r.status_code in (403, 429):
                 wait = min(60, 5 * (2 ** attempt))
-                print(
-                    f"Yahoo rate limit {symbol}: HTTP {r.status_code}. "
-                    f"Waiting {wait}s before retry {attempt + 1}/5",
-                    flush=True,
-                )
+                print(f"Yahoo rate limit {symbol}: HTTP {r.status_code}. Waiting {wait}s before retry {attempt + 1}/5", flush=True)
                 time.sleep(wait)
                 continue
 
@@ -206,11 +202,7 @@ def yahoo_adjusted_ath(symbol):
             last_error = e
             if attempt < 4:
                 wait = min(60, 5 * (2 ** attempt))
-                print(
-                    f"Yahoo failed {symbol}: {e}. "
-                    f"Waiting {wait}s before retry {attempt + 1}/5",
-                    flush=True,
-                )
+                print(f"Yahoo failed {symbol}: {e}. Waiting {wait}s before retry {attempt + 1}/5", flush=True)
                 time.sleep(wait)
 
     raise RuntimeError(f"Yahoo failed after 5 attempts for {symbol}: {last_error}")
@@ -257,24 +249,62 @@ def seed_baseline(smart, universe):
 
 
 def daily_snapshot(smart, universe):
+    """Fetch today's completed OHLC in batches instead of one historical call per stock.
+
+    Angel's Market Data API supports up to 50 NSE tokens per request and is rate-limited
+    to roughly one request per second. This keeps the 2,293-stock daily scan to about
+    one minute instead of thousands of historical requests that trigger AB1021.
+    """
     now = dt.datetime.now(IST)
     date = now.date().isoformat()
     stocks, bars = [], {}
-    for i, inst in enumerate(universe, 1):
+    by_token = {str(inst["token"]): inst for inst in universe}
+    tokens = list(by_token)
+    total_batches = (len(tokens) + 49) // 50
+
+    for batch_no, start in enumerate(range(0, len(tokens), 50), 1):
+        batch = tokens[start:start + 50]
         try:
-            params = {"exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY", "fromdate": f"{date} 09:15", "todate": f"{date} 15:30"}
-            raw = smart.getCandleData(params).get("data") or []
-            if not raw:
-                continue
-            row = raw[-1]
-            bars[inst["symbol"]] = {"date": date, "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": float(row[5] or 0)}
-            stocks.append({**inst, "currentPrice": float(row[4])})
+            raw = smart.getMarketData("OHLC", {"NSE": batch}) or {}
+            data = raw.get("data") or {}
+            fetched = data.get("fetched") or []
+            for row in fetched:
+                token = str(row.get("symbolToken", ""))
+                inst = by_token.get(token)
+                if not inst:
+                    continue
+                high = row.get("high")
+                low = row.get("low")
+                ltp = row.get("ltp")
+                opening = row.get("open")
+                close = row.get("close")
+                if high is None or low is None:
+                    continue
+                symbol = inst["symbol"]
+                bars[symbol] = {
+                    "date": date,
+                    "open": float(opening if opening is not None else ltp),
+                    "high": float(high),
+                    "low": float(low),
+                    "close": float(close if close is not None else ltp),
+                    "volume": 0,
+                }
+                stocks.append({**inst, "currentPrice": float(ltp if ltp is not None else close)})
+            unfetched = data.get("unfetched") or []
+            if unfetched:
+                print(f"ATH daily batch {batch_no}/{total_batches}: {len(unfetched)} unfetched", flush=True)
         except Exception as e:
-            print(f"Daily failed {inst['symbol']}: {e}", flush=True)
-        time.sleep(0.03)
-    if bars:
-        result = post("/api/ath/daily", {"date": date, "detectedAt": now.isoformat(), "stocks": stocks, "dailyBars": bars})
-        print("ATH daily result:", json.dumps(result), flush=True)
+            print(f"ATH daily batch failed {batch_no}/{total_batches}: {e}", flush=True)
+
+        print(f"ATH daily batch {batch_no}/{total_batches}: {len(bars)}/{len(universe)} stocks", flush=True)
+        if batch_no < total_batches:
+            time.sleep(1.05)
+
+    if not bars:
+        raise RuntimeError("ATH daily snapshot returned no usable OHLC data")
+
+    result = post("/api/ath/daily", {"date": date, "detectedAt": now.isoformat(), "stocks": stocks, "dailyBars": bars})
+    print("ATH daily result:", json.dumps(result), flush=True)
 
 
 class LiveMonitor:
