@@ -32,6 +32,13 @@ NSE_ETF_URL = "https://nsearchives.nseindia.com/content/equities/eq_etfseclist.c
 ANGEL_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
+# A small compatibility map for cases where the NSE/Angel symbol differs from
+# Yahoo Finance's NSE ticker. Keep this isolated so symbol resolution is easy to
+# extend without changing the ATH rules.
+YAHOO_SYMBOL_ALIASES = {
+    "ANSAL": "ANSALAPI",
+}
+
 BASE = os.environ.get("SCANNER_BASE_URL", "").rstrip("/")
 SECRET = os.environ.get("ATH_INGEST_SECRET") or os.environ.get("SCANNER_INGEST_SECRET", "")
 API_KEY = os.environ.get("ANGEL_API_KEY", "")
@@ -66,50 +73,143 @@ def download_text(url):
 
 
 def build_universe():
-    equity_rows = list(csv.DictReader(io.StringIO(download_text(NSE_EQUITY_URL))))
-    etf_rows = list(csv.DictReader(io.StringIO(download_text(NSE_ETF_URL))))
-    equity_symbols = {str(r.get("SYMBOL", "")).strip().upper() for r in equity_rows if str(r.get("SERIES", "")).strip().upper() == "EQ"}
-    etf_symbols = {str(r.get("SYMBOL", "")).strip().upper() for r in etf_rows}
+    equity_text = download_text(NSE_EQUITY_URL)
+    etf_text = download_text(NSE_ETF_URL)
+
+    # NSE files have inconsistent header casing/spacing.
+    def normalized_rows(text):
+        reader = csv.reader(io.StringIO(text))
+        rows = list(reader)
+        if not rows:
+            return []
+        headers = [str(h).strip().upper() for h in rows[0]]
+        return [dict(zip(headers, row)) for row in rows[1:] if row]
+
+    equity_rows = normalized_rows(equity_text)
+    etf_rows = normalized_rows(etf_text)
+
+    equity_symbols = {
+        str(r.get("SYMBOL", "")).strip().upper()
+        for r in equity_rows
+        if str(r.get("SERIES", "")).strip().upper() == "EQ"
+    }
+    etf_symbols = {
+        str(r.get("SYMBOL", "")).strip().upper()
+        for r in etf_rows
+        if str(r.get("SYMBOL", "")).strip()
+    }
+
     allowed = equity_symbols - etf_symbols
     instruments = requests.get(ANGEL_MASTER_URL, timeout=60).json()
     out, seen = [], set()
+
     for x in instruments:
         exch = str(x.get("exch_seg", "")).lower()
         symbol = str(x.get("name") or x.get("symbol", "")).upper().strip()
         raw_symbol = symbol.removesuffix("-EQ")
         tradingsymbol = str(x.get("symbol", "")).upper().strip()
+
         if exch not in {"nse", "nse_cm"} or not tradingsymbol.endswith("-EQ"):
             continue
         if raw_symbol not in allowed or raw_symbol in seen:
             continue
+
         seen.add(raw_symbol)
-        out.append({"symbol": raw_symbol, "tradingsymbol": tradingsymbol, "token": str(x["token"]), "securityType": "EQUITY", "active": True})
+        out.append({
+            "symbol": raw_symbol,
+            "tradingsymbol": tradingsymbol,
+            "token": str(x["token"]),
+            "securityType": "EQUITY",
+            "active": True,
+        })
+
     return out
 
 
 def yahoo_adjusted_ath(symbol):
-    ticker = quote(f"{symbol}.NS", safe="")
-    r = requests.get(YAHOO_URL.format(ticker=ticker), params={"range": "max", "interval": "1d", "events": "div,splits", "includeAdjustedClose": "true"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-    r.raise_for_status()
-    result = r.json()["chart"]["result"][0]
-    timestamps = result.get("timestamp") or []
-    q = (result.get("indicators") or {}).get("quote", [{}])[0]
-    adj = (result.get("indicators") or {}).get("adjclose", [{}])[0].get("adjclose", [])
-    highs, closes = q.get("high", []), q.get("close", [])
-    best = None
-    best_date = None
-    for i, ts in enumerate(timestamps):
-        high = highs[i] if i < len(highs) else None
-        close = closes[i] if i < len(closes) else None
-        adjusted_close = adj[i] if i < len(adj) else None
-        if high is None or close in (None, 0) or adjusted_close is None:
-            continue
-        adjusted_high = float(high) * (float(adjusted_close) / float(close))
-        if best is None or adjusted_high > best:
-            best, best_date = adjusted_high, dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).date().isoformat()
-    if best is None:
-        raise ValueError(f"Yahoo returned no usable history for {symbol}")
-    return {"symbol": symbol, "adjustedAthPrice": round(best, 4), "athDate": best_date, "source": "adjusted_historical_yahoo", "rawReferenceHigh": None}
+    yahoo_symbol = YAHOO_SYMBOL_ALIASES.get(symbol, symbol)
+    ticker = quote(f"{yahoo_symbol}.NS", safe="")
+    url = YAHOO_URL.format(ticker=ticker)
+
+    params = {
+        "range": "max",
+        "interval": "1d",
+        "events": "div,splits",
+        "includeAdjustedClose": "true",
+    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+    last_error = None
+
+    for attempt in range(5):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=30)
+
+            if r.status_code == 404 and yahoo_symbol == symbol:
+                raise LookupError(f"Yahoo ticker not found for {symbol}")
+
+            if r.status_code in (403, 429):
+                wait = min(60, 5 * (2 ** attempt))
+                print(
+                    f"Yahoo rate limit {symbol}: HTTP {r.status_code}. "
+                    f"Waiting {wait}s before retry {attempt + 1}/5",
+                    flush=True,
+                )
+                time.sleep(wait)
+                continue
+
+            r.raise_for_status()
+            payload = r.json()
+            result = payload.get("chart", {}).get("result") or []
+            if not result:
+                raise LookupError(f"Yahoo returned no history for {symbol}")
+            result = result[0]
+
+            timestamps = result.get("timestamp") or []
+            q = (result.get("indicators") or {}).get("quote", [{}])[0]
+            adj = (result.get("indicators") or {}).get("adjclose", [{}])[0].get("adjclose", [])
+            highs, closes = q.get("high", []), q.get("close", [])
+
+            best = None
+            best_date = None
+            for i, ts in enumerate(timestamps):
+                high = highs[i] if i < len(highs) else None
+                close = closes[i] if i < len(closes) else None
+                adjusted_close = adj[i] if i < len(adj) else None
+
+                if high is None or close in (None, 0) or adjusted_close is None:
+                    continue
+
+                adjusted_high = float(high) * (float(adjusted_close) / float(close))
+                if best is None or adjusted_high > best:
+                    best = adjusted_high
+                    best_date = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).date().isoformat()
+
+            if best is None:
+                raise LookupError(f"Yahoo returned no usable history for {symbol}")
+
+            return {
+                "symbol": symbol,
+                "adjustedAthPrice": round(best, 4),
+                "athDate": best_date,
+                "source": "adjusted_historical_yahoo",
+                "rawReferenceHigh": None,
+                "historicalSymbol": yahoo_symbol,
+            }
+
+        except LookupError:
+            raise
+        except Exception as e:
+            last_error = e
+            if attempt < 4:
+                wait = min(60, 5 * (2 ** attempt))
+                print(
+                    f"Yahoo failed {symbol}: {e}. "
+                    f"Waiting {wait}s before retry {attempt + 1}/5",
+                    flush=True,
+                )
+                time.sleep(wait)
+
+    raise RuntimeError(f"Yahoo failed after 5 attempts for {symbol}: {last_error}")
 
 
 def login():
@@ -125,23 +225,29 @@ def seed_baseline(smart, universe):
     existing = state.get("athMaster", {})
     rows = []
     now = dt.datetime.now(IST).isoformat()
+
     for i, inst in enumerate(universe, 1):
-        if inst["symbol"] in existing:
+        symbol = inst["symbol"]
+        if symbol in existing:
             continue
+
         try:
-            params = {"exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY", "fromdate": (dt.datetime.now(IST) - dt.timedelta(days=3)).strftime("%Y-%m-%d 09:15"), "todate": dt.datetime.now(IST).strftime("%Y-%m-%d 15:30")}
-            raw = smart.getCandleData(params).get("data") or []
-            if not raw or float(raw[-1][4]) < 50:
-                continue
-            rows.append(yahoo_adjusted_ath(inst["symbol"]))
-            if len(rows) >= 100:
+            rows.append(yahoo_adjusted_ath(symbol))
+
+            if len(rows) >= 25:
                 post("/api/ath/baseline", {"rows": rows, "updatedAt": now})
                 rows.clear()
+
             if i % 25 == 0:
                 print(f"ATH baseline {i}/{len(universe)}", flush=True)
+
+        except LookupError as e:
+            print(f"Baseline skipped {symbol}: {e}", flush=True)
         except Exception as e:
-            print(f"Baseline failed {inst['symbol']}: {e}", flush=True)
-        time.sleep(0.08)
+            print(f"Baseline failed {symbol}: {e}", flush=True)
+
+        time.sleep(1.0)
+
     if rows:
         post("/api/ath/baseline", {"rows": rows, "updatedAt": now})
 
