@@ -84,35 +84,24 @@ def build_universe():
         symbol = str(x.get("name") or x.get("symbol", "")).upper().strip()
         raw_symbol = symbol.removesuffix("-EQ")
         tradingsymbol = str(x.get("symbol", "")).upper().strip()
-        if exch not in {"nse", "nse_cm"}:
-            continue
-        if not tradingsymbol.endswith("-EQ"):
+        if exch not in {"nse", "nse_cm"} or not tradingsymbol.endswith("-EQ"):
             continue
         if raw_symbol not in allowed or raw_symbol in seen:
             continue
         seen.add(raw_symbol)
-        out.append({
-            "symbol": raw_symbol,
-            "tradingsymbol": tradingsymbol,
-            "token": str(x["token"]),
-            "securityType": "EQUITY",
-            "active": True,
-        })
+        out.append({"symbol": raw_symbol, "tradingsymbol": tradingsymbol, "token": str(x["token"]), "securityType": "EQUITY", "active": True})
     return out
 
 
 def yahoo_adjusted_ath(symbol):
     ticker = quote(f"{symbol}.NS", safe="")
-    url = YAHOO_URL.format(ticker=ticker)
-    params = {"range": "max", "interval": "1d", "events": "div,splits", "includeAdjustedClose": "true"}
-    r = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+    r = requests.get(YAHOO_URL.format(ticker=ticker), params={"range": "max", "interval": "1d", "events": "div,splits", "includeAdjustedClose": "true"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
     r.raise_for_status()
     result = r.json()["chart"]["result"][0]
     timestamps = result.get("timestamp") or []
     q = (result.get("indicators") or {}).get("quote", [{}])[0]
     adj = (result.get("indicators") or {}).get("adjclose", [{}])[0].get("adjclose", [])
-    highs = q.get("high", [])
-    closes = q.get("close", [])
+    highs, closes = q.get("high", []), q.get("close", [])
     best = None
     best_date = None
     for i, ts in enumerate(timestamps):
@@ -121,11 +110,9 @@ def yahoo_adjusted_ath(symbol):
         adjusted_close = adj[i] if i < len(adj) else None
         if high is None or close in (None, 0) or adjusted_close is None:
             continue
-        factor = float(adjusted_close) / float(close)
-        adjusted_high = float(high) * factor
+        adjusted_high = float(high) * (float(adjusted_close) / float(close))
         if best is None or adjusted_high > best:
-            best = adjusted_high
-            best_date = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).date().isoformat()
+            best, best_date = adjusted_high, dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).date().isoformat()
     if best is None:
         raise ValueError(f"Yahoo returned no usable history for {symbol}")
     return {"symbol": symbol, "adjustedAthPrice": round(best, 4), "athDate": best_date, "source": "adjusted_historical_yahoo", "rawReferenceHigh": None}
@@ -148,19 +135,11 @@ def seed_baseline(smart, universe):
         if inst["symbol"] in existing:
             continue
         try:
-            params = {
-                "exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY",
-                "fromdate": (dt.datetime.now(IST) - dt.timedelta(days=2000)).strftime("%Y-%m-%d 09:15"),
-                "todate": dt.datetime.now(IST).strftime("%Y-%m-%d 15:30"),
-            }
+            params = {"exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY", "fromdate": (dt.datetime.now(IST) - dt.timedelta(days=2000)).strftime("%Y-%m-%d 09:15"), "todate": dt.datetime.now(IST).strftime("%Y-%m-%d 15:30")}
             raw = smart.getCandleData(params).get("data") or []
-            if not raw:
+            if not raw or float(raw[-1][4]) < 50:
                 continue
-            current_price = float(raw[-1][4])
-            if current_price < 50:
-                continue
-            row = yahoo_adjusted_ath(inst["symbol"])
-            rows.append(row)
+            rows.append(yahoo_adjusted_ath(inst["symbol"]))
             if len(rows) >= 100:
                 post("/api/ath/baseline", {"rows": rows, "updatedAt": now})
                 rows.clear()
@@ -176,22 +155,15 @@ def seed_baseline(smart, universe):
 def daily_snapshot(smart, universe):
     now = dt.datetime.now(IST)
     date = now.date().isoformat()
-    stocks = []
-    bars = {}
+    stocks, bars = [], {}
     for i, inst in enumerate(universe, 1):
         try:
-            params = {
-                "exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY",
-                "fromdate": f"{date} 09:15", "todate": f"{date} 15:30",
-            }
+            params = {"exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY", "fromdate": f"{date} 09:15", "todate": f"{date} 15:30"}
             raw = smart.getCandleData(params).get("data") or []
             if not raw:
                 continue
             row = raw[-1]
-            bars[inst["symbol"]] = {
-                "date": date, "open": float(row[1]), "high": float(row[2]),
-                "low": float(row[3]), "close": float(row[4]), "volume": float(row[5] or 0),
-            }
+            bars[inst["symbol"]] = {"date": date, "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": float(row[4]), "volume": float(row[5] or 0)}
             stocks.append({**inst, "currentPrice": float(row[4])})
         except Exception as e:
             print(f"Daily failed {inst['symbol']}: {e}", flush=True)
@@ -202,7 +174,7 @@ def daily_snapshot(smart, universe):
 
 
 class LiveMonitor:
-    def __init__(self, smart, jwt, feed, universe):
+    def __init__(self, jwt, feed, universe):
         self.ws = SmartWebSocketV2(jwt, API_KEY, CLIENT, feed)
         self.by_token = {x["token"]: x for x in universe}
         self.subscribed = set()
@@ -214,13 +186,14 @@ class LiveMonitor:
     def refresh_subscriptions(self):
         try:
             state = get("/api/ath/state")
-            wanted_symbols = {x["symbol"] for x in state.get("tradeSetups", []) if x.get("status") in {"PENDING_D1", "TRIGGERED"}}
-            tokens = [x["token"] for x in self.by_token.values() if x["symbol"] in wanted_symbols and x["token"] not in self.subscribed]
-            if tokens:
-                for start in range(0, len(tokens), 50):
-                    chunk = tokens[start:start + 50]
+            wanted = {x["symbol"] for x in state.get("tradeSetups", []) if x.get("status") in {"PENDING_D1", "TRIGGERED"}}
+            tokens = [x["token"] for x in self.by_token.values() if x["symbol"] in wanted and x["token"] not in self.subscribed]
+            for start in range(0, len(tokens), 50):
+                chunk = tokens[start:start + 50]
+                if chunk:
                     self.ws.subscribe("ath-live", 2, [{"exchangeType": 1, "tokens": chunk}])
                     self.subscribed.update(chunk)
+            if tokens:
                 print(f"ATH subscribed +{len(tokens)} active symbols", flush=True)
         except Exception as e:
             print("ATH subscription refresh failed", e, flush=True)
@@ -231,8 +204,7 @@ class LiveMonitor:
 
     def on_data(self, wsapp, data, data_type=None, continue_flag=None):
         try:
-            token = str(data["token"])
-            inst = self.by_token.get(token)
+            inst = self.by_token.get(str(data["token"]))
             if not inst:
                 return
             px = float(data["last_traded_price"]) / 100.0
@@ -257,11 +229,12 @@ def main():
     if os.environ.get("ATH_SEED_BASELINE", "1") == "1":
         seed_baseline(smart, universe)
 
-    monitor = LiveMonitor(smart, jwt, feed, universe)
+    monitor = LiveMonitor(jwt, feed, universe)
     threading.Thread(target=monitor.run, daemon=True).start()
 
     last_daily_date = None
     last_refresh_minute = None
+    last_expiry_date = None
     while True:
         now = dt.datetime.now(IST)
         if now.hour >= 17 and last_daily_date != now.date():
@@ -270,6 +243,12 @@ def main():
                 last_daily_date = now.date()
             except Exception as e:
                 print("ATH daily snapshot failed", e, flush=True)
+        if now.hour == 15 and now.minute >= 31 and last_expiry_date != now.date():
+            try:
+                post("/api/ath/live", {"candlesBySymbol": {}, "expireDate": now.date().isoformat(), "updatedAt": now.isoformat()})
+                last_expiry_date = now.date()
+            except Exception as e:
+                print("ATH expiry failed", e, flush=True)
         minute_key = now.replace(second=0, microsecond=0)
         if last_refresh_minute != minute_key and 9 <= now.hour < 16:
             monitor.refresh_subscriptions()
