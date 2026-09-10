@@ -6,12 +6,42 @@ export default async function handler(req, res) {
     requireAthSecret(req);
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-    const { repairs } = req.body || {};
+    const { repairs, rebuild } = req.body || {};
     if (!Array.isArray(repairs) || repairs.length === 0) {
       return res.status(400).json({ error: 'repairs must be a non-empty array' });
     }
 
     const state = await readAthState();
+
+    if (rebuild === true) {
+      let replaced = 0;
+
+      for (const row of repairs) {
+        const symbol = String(row?.symbol || '').trim().toUpperCase();
+        const adjustedAthPrice = Number(row?.adjustedAthPrice);
+        if (!symbol || !Number.isFinite(adjustedAthPrice) || adjustedAthPrice <= 0) continue;
+
+        state.athMaster[symbol] = {
+          adjustedAthPrice,
+          athDate: row.athDate ?? null,
+          source: row.source ?? 'corporate_action_adjusted_yahoo',
+          rawReferenceHigh: row.rawReferenceHigh ?? null,
+          updatedAt: new Date().toISOString(),
+        };
+        replaced += 1;
+      }
+
+      state.updatedAt = new Date().toISOString();
+      await writeAthState(state);
+
+      return res.status(200).json({
+        replaced,
+        athEvents: state.athEvents.length,
+        tradeSetups: state.tradeSetups.length,
+        updatedAt: state.updatedAt,
+      });
+    }
+
     const repaired = [];
 
     for (const repair of repairs) {
