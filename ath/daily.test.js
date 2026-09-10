@@ -5,7 +5,9 @@ import { createAthState } from './state.js';
 import { detectDailyAth } from './daily.js';
 
 test('daily detector only considers current-price >= 50 equities', () => {
-  const result = detectDailyAth(createAthState(), {
+  const state = createAthState();
+  state.athMaster.HIGH = { adjustedAthPrice: 100, athDate: '2026-09-01' };
+  const result = detectDailyAth(state, {
     date: '2026-09-10',
     detectedAt: '2026-09-10T17:05:00+05:30',
     stocks: [
