@@ -49,7 +49,9 @@ export async function sendTelegram(text) {
 export async function sendOnce(state, key, text, sentAt = new Date().toISOString()) {
   if (state.alertLedger?.[key]) return { state, sent: false, duplicate: true };
   const result = await sendTelegram(text);
-  if (!state.alertLedger) state.alertLedger = {};
-  if (result.sent || result.skipped) state.alertLedger[key] = { sentAt, status: result.skipped ? 'SKIPPED_NOT_CONFIGURED' : 'SENT' };
-  return { state, sent: result.sent, duplicate: false };
+  if (result.sent) {
+    if (!state.alertLedger) state.alertLedger = {};
+    state.alertLedger[key] = { sentAt, status: 'SENT' };
+  }
+  return { state, sent: result.sent, duplicate: false, skipped: result.skipped === true };
 }
