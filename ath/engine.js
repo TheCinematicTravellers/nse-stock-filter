@@ -39,9 +39,9 @@ export function buildSetup(event, tradingDate) {
     actualEntry: null,
     baseCapital: BASE_CAPITAL,
     quantity,
-    deployedCapital: null,
+    deployedCapital: round(quantity * plannedEntry),
     riskPerShare: round(riskPerShare),
-    riskAmount: null,
+    riskAmount: round(quantity * riskPerShare),
     target1R: round(plannedEntry + riskPerShare),
     status: 'PENDING_D1',
     entryReason: null,
@@ -60,28 +60,16 @@ export function applyD1Tick(setup, candle) {
   const low = n(candle.low);
   const open = n(candle.open);
   const date = String(candle.time).slice(0, 10);
-
   if (date !== setup.tradingDate) return setup;
 
   const highBroken = high > setup.setupHigh;
   const lowBroken = low < setup.setupLow;
-
   if (highBroken && lowBroken) {
-    return {
-      ...setup,
-      status: 'AMBIGUOUS',
-      ambiguity: 'HIGH_AND_LOW_BROKEN_SAME_CANDLE',
-    };
+    return { ...setup, status: 'AMBIGUOUS', ambiguity: 'HIGH_AND_LOW_BROKEN_SAME_CANDLE' };
   }
-
   if (lowBroken) {
-    return {
-      ...setup,
-      status: 'INVALIDATED',
-      invalidationTime: candle.time,
-    };
+    return { ...setup, status: 'INVALIDATED', invalidationTime: candle.time };
   }
-
   if (highBroken || open > setup.setupHigh) {
     const actualEntry = open > setup.setupHigh ? open : setup.setupHigh;
     const riskPerShare = actualEntry - setup.setupLow;
@@ -99,7 +87,6 @@ export function applyD1Tick(setup, candle) {
       entryTime: candle.time,
     };
   }
-
   return setup;
 }
 
