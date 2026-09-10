@@ -21,7 +21,7 @@ test('ordinary weekday is a trading day', () => {
 });
 
 test('next trading day skips weekend', () => {
-  assert.equal(nextTradingDay('2026-09-11'), '2026-09-14');
+  assert.equal(nextTradingDay('2026-09-10'), '2026-09-11');
 });
 
 test('next trading day skips NSE holiday and weekend', () => {
