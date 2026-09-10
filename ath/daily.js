@@ -24,19 +24,20 @@ export function detectDailyAth(inputState, { date, detectedAt, stocks, dailyBars
     if (!Number.isFinite(todayHigh) || !Number.isFinite(todayLow)) continue;
 
     const previousAth = state.athMaster[symbol]?.adjustedAthPrice;
-    if (previousAth != null && !isNewAth(todayHigh, previousAth)) continue;
-    if (previousAth == null && todayHigh <= 0) continue;
+    if (previousAth == null) continue;
+    if (!isNewAth(todayHigh, previousAth)) continue;
 
     const tradingDate = nextTradingDate(date);
+    if (!tradingDate) throw new Error(`nextTradingDate returned no date for ${date}`);
     const out = recordNewAth(state, {
       symbol,
       athDate: date,
       athHigh: todayHigh,
       athLow: todayLow,
-      previousAth: previousAth ?? 0,
+      previousAth,
       tradingDate,
       detectedAt,
-      source: 'adjusted_historical',
+      source: 'forward_daily',
       rawReferenceHigh: todayHigh,
     });
     state = out.state;
