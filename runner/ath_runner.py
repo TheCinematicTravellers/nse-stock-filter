@@ -108,7 +108,6 @@ def yahoo_adjusted_ath(symbol):
     r = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
     r.raise_for_status()
     result = r.json()["chart"]["result"][0]
-    meta = result.get("meta", {})
     timestamps = result.get("timestamp") or []
     q = (result.get("indicators") or {}).get("quote", [{}])[0]
     adj = (result.get("indicators") or {}).get("adjclose", [{}])[0].get("adjclose", [])
@@ -150,9 +149,7 @@ def seed_baseline(smart, universe):
             continue
         try:
             params = {
-                "exchange": "NSE",
-                "symboltoken": inst["token"],
-                "interval": "ONE_DAY",
+                "exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY",
                 "fromdate": (dt.datetime.now(IST) - dt.timedelta(days=2000)).strftime("%Y-%m-%d 09:15"),
                 "todate": dt.datetime.now(IST).strftime("%Y-%m-%d 15:30"),
             }
@@ -209,8 +206,6 @@ class LiveMonitor:
         self.ws = SmartWebSocketV2(jwt, API_KEY, CLIENT, feed)
         self.by_token = {x["token"]: x for x in universe}
         self.subscribed = set()
-        self.lock = threading.Lock()
-        self.last_refresh = 0
         self.ws.on_data = self.on_data
         self.ws.on_open = self.on_open
         self.ws.on_error = lambda ws, err: print("ATH WS error", err, flush=True)
@@ -224,7 +219,7 @@ class LiveMonitor:
             if tokens:
                 for start in range(0, len(tokens), 50):
                     chunk = tokens[start:start + 50]
-                    self.ws.subscribe("ath-live", 1, [{"exchangeType": 1, "tokens": chunk}])
+                    self.ws.subscribe("ath-live", 2, [{"exchangeType": 1, "tokens": chunk}])
                     self.subscribed.update(chunk)
                 print(f"ATH subscribed +{len(tokens)} active symbols", flush=True)
         except Exception as e:
@@ -276,7 +271,7 @@ def main():
             except Exception as e:
                 print("ATH daily snapshot failed", e, flush=True)
         minute_key = now.replace(second=0, microsecond=0)
-        if last_refresh_minute != minute_key and now.hour >= 9 and (now.hour < 16):
+        if last_refresh_minute != minute_key and 9 <= now.hour < 16:
             monitor.refresh_subscriptions()
             last_refresh_minute = minute_key
         time.sleep(5)
