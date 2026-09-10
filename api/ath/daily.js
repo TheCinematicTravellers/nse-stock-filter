@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       detectedAt: detectedAt || new Date().toISOString(),
       stocks,
       dailyBars,
-      nextTradingDate,
+      nextTradingDate: nextTradingDay,
     });
     state = result.state;
 
