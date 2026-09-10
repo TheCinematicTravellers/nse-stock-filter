@@ -123,6 +123,12 @@ def build_universe():
 
 
 def yahoo_adjusted_ath(symbol):
+    """Return the historical ATH in the current share-price scale.
+
+    Yahoo's Adj Close includes dividend adjustments. Dividends should not lower a
+    historical price-level ATH for this breakout system, so we ignore Adj Close and
+    adjust raw highs only for actual stock splits reported by Yahoo.
+    """
     yahoo_symbol = YAHOO_SYMBOL_ALIASES.get(symbol, symbol)
     ticker = quote(f"{yahoo_symbol}.NS", safe="")
     url = YAHOO_URL.format(ticker=ticker)
@@ -158,30 +164,42 @@ def yahoo_adjusted_ath(symbol):
 
             timestamps = result.get("timestamp") or []
             q = (result.get("indicators") or {}).get("quote", [{}])[0]
-            adjclose_data = (result.get("indicators") or {}).get("adjclose", [{}])
-            adj = adjclose_data[0].get("adjclose", []) if adjclose_data else []
-            highs, closes = q.get("high", []), q.get("close", [])
+            highs = q.get("high", [])
+            split_events = (result.get("events") or {}).get("splits") or {}
+
+            split_points = []
+            for event_ts, event in split_events.items():
+                try:
+                    numerator = float(event.get("numerator"))
+                    denominator = float(event.get("denominator"))
+                    if numerator > 0 and denominator > 0:
+                        split_points.append((int(event_ts), numerator / denominator))
+                except (TypeError, ValueError):
+                    continue
+            split_points.sort()
+
+            def split_factor_for(ts):
+                factor = 1.0
+                for split_ts, ratio in split_points:
+                    if int(ts) < split_ts:
+                        factor *= ratio
+                return factor
 
             best = None
             best_date = None
-            used_raw_fallback = False
+            best_raw = None
 
             for i, ts in enumerate(timestamps):
                 high = highs[i] if i < len(highs) else None
-                close = closes[i] if i < len(closes) else None
-                adjusted_close = adj[i] if i < len(adj) else None
-
                 if high is None:
                     continue
 
-                if close not in (None, 0) and adjusted_close is not None:
-                    adjusted_high = float(high) * (float(adjusted_close) / float(close))
-                else:
-                    adjusted_high = float(high)
-                    used_raw_fallback = True
+                raw_high = float(high)
+                adjusted_high = raw_high * split_factor_for(ts)
 
                 if best is None or adjusted_high > best:
                     best = adjusted_high
+                    best_raw = raw_high
                     best_date = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).date().isoformat()
 
             if best is None:
@@ -191,8 +209,8 @@ def yahoo_adjusted_ath(symbol):
                 "symbol": symbol,
                 "adjustedAthPrice": round(best, 4),
                 "athDate": best_date,
-                "source": "historical_yahoo_raw_fallback" if used_raw_fallback else "adjusted_historical_yahoo",
-                "rawReferenceHigh": None,
+                "source": "corporate_action_adjusted_yahoo",
+                "rawReferenceHigh": best_raw,
                 "historicalSymbol": yahoo_symbol,
             }
 
