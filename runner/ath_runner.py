@@ -32,9 +32,6 @@ NSE_ETF_URL = "https://nsearchives.nseindia.com/content/equities/eq_etfseclist.c
 ANGEL_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
-# A small compatibility map for cases where the NSE/Angel symbol differs from
-# Yahoo Finance's NSE ticker. Keep this isolated so symbol resolution is easy to
-# extend without changing the ATH rules.
 YAHOO_SYMBOL_ALIASES = {
     "ANSAL": "ANSALAPI",
 }
@@ -76,7 +73,6 @@ def build_universe():
     equity_text = download_text(NSE_EQUITY_URL)
     etf_text = download_text(NSE_ETF_URL)
 
-    # NSE files have inconsistent header casing/spacing.
     def normalized_rows(text):
         reader = csv.reader(io.StringIO(text))
         rows = list(reader)
@@ -166,20 +162,28 @@ def yahoo_adjusted_ath(symbol):
 
             timestamps = result.get("timestamp") or []
             q = (result.get("indicators") or {}).get("quote", [{}])[0]
-            adj = (result.get("indicators") or {}).get("adjclose", [{}])[0].get("adjclose", [])
+            adjclose_data = (result.get("indicators") or {}).get("adjclose", [{}])
+            adj = adjclose_data[0].get("adjclose", []) if adjclose_data else []
             highs, closes = q.get("high", []), q.get("close", [])
 
             best = None
             best_date = None
+            used_raw_fallback = False
+
             for i, ts in enumerate(timestamps):
                 high = highs[i] if i < len(highs) else None
                 close = closes[i] if i < len(closes) else None
                 adjusted_close = adj[i] if i < len(adj) else None
 
-                if high is None or close in (None, 0) or adjusted_close is None:
+                if high is None:
                     continue
 
-                adjusted_high = float(high) * (float(adjusted_close) / float(close))
+                if close not in (None, 0) and adjusted_close is not None:
+                    adjusted_high = float(high) * (float(adjusted_close) / float(close))
+                else:
+                    adjusted_high = float(high)
+                    used_raw_fallback = True
+
                 if best is None or adjusted_high > best:
                     best = adjusted_high
                     best_date = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).date().isoformat()
@@ -191,7 +195,7 @@ def yahoo_adjusted_ath(symbol):
                 "symbol": symbol,
                 "adjustedAthPrice": round(best, 4),
                 "athDate": best_date,
-                "source": "adjusted_historical_yahoo",
+                "source": "historical_yahoo_raw_fallback" if used_raw_fallback else "adjusted_historical_yahoo",
                 "rawReferenceHigh": None,
                 "historicalSymbol": yahoo_symbol,
             }
