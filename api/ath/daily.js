@@ -2,7 +2,7 @@ import { requireAthSecret } from './auth.js';
 import { readAthState, writeAthState } from '../../ath/store.js';
 import { detectDailyAth } from '../../ath/daily.js';
 import { nextTradingDay } from '../../ath/calendar.js';
-import { formatNewAthAlert, sendOnce } from '../../ath/telegram.js';
+import { formatNewAthSummary, sendOnce } from '../../ath/telegram.js';
 
 const IST = 'Asia/Kolkata';
 
@@ -37,15 +37,23 @@ export default async function handler(req, res) {
     });
     state = result.state;
 
-    const alerts = [];
-    for (const { event, setup } of result.created) {
-      const alert = await sendOnce(state, `NEW_ATH:${event.id}`, formatNewAthAlert(event, setup), detectedAt);
+    let alert = { sent: false, duplicate: false, skipped: false };
+    if (result.created.length > 0) {
+      alert = await sendOnce(
+        state,
+        `NEW_ATH_SUMMARY:${runDate}`,
+        formatNewAthSummary(result.created),
+        detectedAt,
+      );
       state = alert.state;
-      alerts.push({ eventId: event.id, sent: alert.sent, duplicate: alert.duplicate, skipped: alert.skipped });
     }
 
     await writeAthState(state);
-    return res.status(200).json({ newAthSymbols: result.newAthSymbols, alerts, created: result.created.map(({ event, setup }) => ({ event, setup })) });
+    return res.status(200).json({
+      newAthSymbols: result.newAthSymbols,
+      alert,
+      created: result.created.map(({ event, setup }) => ({ event, setup })),
+    });
   } catch (error) {
     return res.status(error.statusCode || 500).json({ error: error.message });
   }
