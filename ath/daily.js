@@ -6,7 +6,7 @@ const n = (value) => Number(value);
 function isEligible(stock) {
   return stock?.active !== false &&
     String(stock?.securityType ?? 'EQUITY').toUpperCase() === 'EQUITY' &&
-    Number.isFinite(n(stock?.currentPrice)) && n(stock.currentPrice) >= 50;
+    Number.isFinite(n(stock?.currentPrice));
 }
 
 export function detectDailyAth(inputState, { date, detectedAt, stocks, dailyBars, nextTradingDate }) {
