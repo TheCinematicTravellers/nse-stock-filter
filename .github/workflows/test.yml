@@ -2,8 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/ath-breakout-monitor]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
