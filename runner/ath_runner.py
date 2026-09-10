@@ -5,7 +5,7 @@ Separate from the existing inside-50 scanner. No backtest logic lives here.
 Responsibilities:
 - Build the current NSE equity universe from NSE's official equity/ETF lists.
 - Match it to Angel One cash-market tokens.
-- Seed/refresh corporate-action-adjusted ATH baselines from Yahoo Finance.
+- Seed corporate-action-adjusted ATH baselines from Yahoo Finance.
 - After 17:00 IST, send the completed daily OHLC snapshot to /api/ath/daily.
 - During market hours, subscribe only to active D+1 setups and forward ticks to /api/ath/live.
 """
@@ -68,17 +68,11 @@ def download_text(url):
 def build_universe():
     equity_rows = list(csv.DictReader(io.StringIO(download_text(NSE_EQUITY_URL))))
     etf_rows = list(csv.DictReader(io.StringIO(download_text(NSE_ETF_URL))))
-    equity_symbols = {
-        str(r.get("SYMBOL", "")).strip().upper()
-        for r in equity_rows
-        if str(r.get("SERIES", "")).strip().upper() == "EQ"
-    }
+    equity_symbols = {str(r.get("SYMBOL", "")).strip().upper() for r in equity_rows if str(r.get("SERIES", "")).strip().upper() == "EQ"}
     etf_symbols = {str(r.get("SYMBOL", "")).strip().upper() for r in etf_rows}
     allowed = equity_symbols - etf_symbols
-
     instruments = requests.get(ANGEL_MASTER_URL, timeout=60).json()
-    out = []
-    seen = set()
+    out, seen = [], set()
     for x in instruments:
         exch = str(x.get("exch_seg", "")).lower()
         symbol = str(x.get("name") or x.get("symbol", "")).upper().strip()
@@ -135,7 +129,7 @@ def seed_baseline(smart, universe):
         if inst["symbol"] in existing:
             continue
         try:
-            params = {"exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY", "fromdate": (dt.datetime.now(IST) - dt.timedelta(days=2000)).strftime("%Y-%m-%d 09:15"), "todate": dt.datetime.now(IST).strftime("%Y-%m-%d 15:30")}
+            params = {"exchange": "NSE", "symboltoken": inst["token"], "interval": "ONE_DAY", "fromdate": (dt.datetime.now(IST) - dt.timedelta(days=3)).strftime("%Y-%m-%d 09:15"), "todate": dt.datetime.now(IST).strftime("%Y-%m-%d 15:30")}
             raw = smart.getCandleData(params).get("data") or []
             if not raw or float(raw[-1][4]) < 50:
                 continue
