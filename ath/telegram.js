@@ -20,6 +20,25 @@ export function formatNewAthAlert(event, setup) {
   ].join('\n');
 }
 
+export function formatNewAthSummary(created) {
+  const lines = [
+    '🚨 NEW ATH SUMMARY',
+    `Total new ATHs: ${created.length}`,
+    '',
+  ];
+
+  for (const { event, setup } of created) {
+    lines.push(
+      `${event.symbol} | ATH ₹${event.athHigh} | Low/SL ₹${event.athLow}`,
+      `D+1 ${setup.tradingDate} | Entry ₹${setup.plannedEntry} | 1R ₹${setup.target1R} | Qty ${setup.quantity}`,
+      '',
+    );
+  }
+
+  lines.push('Rule: D+1 breaks prior ATH high; low-first invalidates; setup expires after D+1.');
+  return lines.join('\n').trim();
+}
+
 export function formatTradeAlert(setup) {
   return [
     setup.status === 'TRIGGERED' ? '🟢 ATH ENTRY' : '🔔 ATH UPDATE',
