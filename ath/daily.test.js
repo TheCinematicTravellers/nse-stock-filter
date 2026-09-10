@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 import { createAthState } from './state.js';
 import { detectDailyAth } from './daily.js';
 
-test('daily detector only considers current-price >= 50 equities', () => {
+test('daily detector includes all priced equities regardless of price', () => {
   const state = createAthState();
   state.athMaster.HIGH = { adjustedAthPrice: 100, athDate: '2026-09-01' };
+  state.athMaster.LOW = { adjustedAthPrice: 900, athDate: '2026-09-01' };
   const result = detectDailyAth(state, {
     date: '2026-09-10',
     detectedAt: '2026-09-10T17:05:00+05:30',
@@ -23,8 +24,8 @@ test('daily detector only considers current-price >= 50 equities', () => {
     nextTradingDate: () => '2026-09-11',
   });
 
-  assert.deepEqual(result.newAthSymbols, ['HIGH']);
-  assert.equal(result.state.athEvents.length, 1);
+  assert.deepEqual(result.newAthSymbols, ['HIGH', 'LOW']);
+  assert.equal(result.state.athEvents.length, 2);
 });
 
 test('equal high does not create an ATH event', () => {
