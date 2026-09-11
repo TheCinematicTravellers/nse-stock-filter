@@ -18,6 +18,8 @@ export function applyExitTick(trade, candle) {
       ...trade,
       status: 'AMBIGUOUS_EXIT',
       ambiguity: 'TARGET_AND_STOP_SAME_CANDLE',
+      statusUpdatedAt: candle.time,
+      updatedAt: candle.time,
     };
   }
 
@@ -28,6 +30,8 @@ export function applyExitTick(trade, candle) {
       exitPrice: round(stop),
       exitTime: candle.time,
       resultR: -1,
+      statusUpdatedAt: candle.time,
+      updatedAt: candle.time,
     };
   }
 
@@ -38,6 +42,8 @@ export function applyExitTick(trade, candle) {
       exitPrice: round(target),
       exitTime: candle.time,
       resultR: 1,
+      statusUpdatedAt: candle.time,
+      updatedAt: candle.time,
     };
   }
 
