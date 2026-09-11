@@ -34,15 +34,21 @@ export default async function handler(req, res) {
     if (!Array.isArray(stocks) || !dailyBars || typeof dailyBars !== 'object') {
       return res.status(400).json({ error: 'stocks and dailyBars are required' });
     }
-    if (!snapshotComplete) {
+
+    let state = await readAthState();
+    const expectedCount = Object.keys(state.athMaster || {}).length;
+    const observedCount = Object.keys(dailyBars).length;
+    const completenessFloor = expectedCount >= 1000 ? expectedCount - 2 : expectedCount;
+    if (!snapshotComplete || (expectedCount >= 1000 && observedCount < completenessFloor)) {
       return res.status(409).json({
         error: 'ATH daily snapshot is incomplete; refusing to create partial NEW ATH events',
+        expectedCount,
         universeCount,
-        barCount: Object.keys(dailyBars).length,
+        barCount: observedCount,
+        completenessFloor,
       });
     }
 
-    let state = await readAthState();
     const result = detectDailyAth(state, {
       date: runDate,
       detectedAt: detectedAt || new Date().toISOString(),
