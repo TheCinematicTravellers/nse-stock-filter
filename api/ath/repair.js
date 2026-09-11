@@ -6,12 +6,37 @@ export default async function handler(req, res) {
     requireAthSecret(req);
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-    const { repairs, rebuild } = req.body || {};
-    if (!Array.isArray(repairs) || repairs.length === 0) {
-      return res.status(400).json({ error: 'repairs must be a non-empty array' });
+    const { repairs, rebuild, deleteSymbols } = req.body || {};
+    const hasDeleteSymbols = Array.isArray(deleteSymbols);
+    if ((!Array.isArray(repairs) || repairs.length === 0) && !hasDeleteSymbols) {
+      return res.status(400).json({ error: 'repairs must be a non-empty array or deleteSymbols must be an array' });
     }
 
     const state = await readAthState();
+
+    if (hasDeleteSymbols) {
+      const symbols = [...new Set(deleteSymbols.map((symbol) => String(symbol || '').trim().toUpperCase()).filter(Boolean))];
+      const deleted = [];
+
+      for (const symbol of symbols) {
+        if (Object.prototype.hasOwnProperty.call(state.athMaster, symbol)) {
+          delete state.athMaster[symbol];
+          deleted.push(symbol);
+        }
+      }
+
+      state.updatedAt = new Date().toISOString();
+      await writeAthState(state);
+
+      return res.status(200).json({
+        deleted,
+        deletedCount: deleted.length,
+        masterCount: Object.keys(state.athMaster).length,
+        athEvents: state.athEvents.length,
+        tradeSetups: state.tradeSetups.length,
+        updatedAt: state.updatedAt,
+      });
+    }
 
     if (rebuild === true) {
       let replaced = 0;
