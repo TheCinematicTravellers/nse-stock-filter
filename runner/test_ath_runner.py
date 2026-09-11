@@ -1,5 +1,6 @@
 import os
 import unittest
+import datetime as dt
 from unittest.mock import patch
 
 os.environ.setdefault("SCANNER_BASE_URL", "https://example.test")
@@ -166,6 +167,36 @@ class LiveSubscriptionTests(unittest.TestCase):
             ("ath-live", 2, [{"exchangeType": 1, "tokens": ["123"]}])
         ])
         self.assertEqual(monitor.subscribed, {"123"})
+
+class LiveSessionTests(unittest.TestCase):
+    def test_on_data_ignores_ticks_after_nse_close(self):
+        class FakeWS:
+            def subscribe(self, *args):
+                pass
+
+        monitor = ath_runner.LiveMonitor.__new__(ath_runner.LiveMonitor)
+        monitor.ws = FakeWS()
+        monitor.by_token = {
+            "123": {"token": "123", "symbol": "AHCL"},
+        }
+        monitor.subscribed = set()
+
+        data = {
+            "token": "123",
+            "last_traded_price": 1800,
+            "exchange_timestamp": int(
+                dt.datetime(
+                    2026, 9, 11, 15, 59, 57,
+                    tzinfo=ath_runner.IST,
+                ).timestamp() * 1000
+            ),
+            "open_price_of_the_day": 1750,
+        }
+
+        with patch.object(ath_runner, "post") as mock_post:
+            monitor.on_data(None, data)
+
+        mock_post.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

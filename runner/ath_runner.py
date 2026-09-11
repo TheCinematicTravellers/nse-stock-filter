@@ -375,6 +375,8 @@ class LiveMonitor:
             px = float(data["last_traded_price"]) / 100.0
             ts = int(data.get("exchange_timestamp") or time.time() * 1000)
             t = dt.datetime.fromtimestamp(ts / 1000, tz=IST)
+            if t.hour > 15 or (t.hour == 15 and t.minute > 30):
+                return
             opening = data.get("open_price_of_the_day")
             if opening is not None:
                 opening = float(opening) / 100.0
