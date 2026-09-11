@@ -30,12 +30,30 @@ export function statusLabel(status) {
 }
 
 export function activityDate(setup) {
-  const value = setup.statusUpdatedAt
-    || setup.exitTime
-    || setup.entryTime
-    || setup.invalidationTime
-    || setup.tradingDate
-    || setup.setupDate;
+  let value;
+  switch (setup?.status) {
+    case 'PENDING_D1':
+      value = setup.tradingDate;
+      break;
+    case 'TRIGGERED':
+      value = setup.entryTime || setup.statusUpdatedAt;
+      break;
+    case 'INVALIDATED':
+      value = setup.invalidationTime || setup.statusUpdatedAt;
+      break;
+    case 'TARGET_HIT':
+    case 'STOP_LOSS':
+    case 'AMBIGUOUS_EXIT':
+      value = setup.exitTime || setup.statusUpdatedAt;
+      break;
+    case 'EXPIRED':
+    case 'AMBIGUOUS':
+      value = setup.statusUpdatedAt || setup.tradingDate;
+      break;
+    default:
+      value = setup.statusUpdatedAt || setup.tradingDate || setup.setupDate;
+      break;
+  }
   if (!value) return null;
   const match = String(value).match(/^\d{4}-\d{2}-\d{2}/);
   return match ? match[0] : null;
