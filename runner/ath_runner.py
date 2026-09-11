@@ -56,6 +56,14 @@ def post(path, payload):
     r.raise_for_status()
     return r.json()
 
+def rebuild_baseline(rows):
+    if not rows:
+        return None
+
+    return post("/api/ath/repair", {
+        "rebuild": True,
+        "repairs": rows,
+    })
 
 def get(path):
     r = requests.get(BASE + path, headers=HEAD, timeout=30)
@@ -173,7 +181,7 @@ def yahoo_adjusted_ath(symbol):
                     numerator = float(event.get("numerator"))
                     denominator = float(event.get("denominator"))
                     if numerator > 0 and denominator > 0:
-                        split_points.append((int(event_ts), numerator / denominator))
+                        split_points.append((int(event_ts), min(numerator / denominator, denominator / numerator)))
                 except (TypeError, ValueError):
                     continue
             split_points.sort()
@@ -189,7 +197,12 @@ def yahoo_adjusted_ath(symbol):
             best_date = None
             best_raw = None
 
+            today_ist = dt.datetime.now(IST).date()
+
             for i, ts in enumerate(timestamps):
+                bar_date_ist = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc).astimezone(IST).date()
+                if bar_date_ist >= today_ist:
+                    continue
                 high = highs[i] if i < len(highs) else None
                 if high is None:
                     continue
@@ -392,6 +405,7 @@ def main():
         if now.hour >= 17 and last_daily_date != now.date():
             try:
                 daily_snapshot(smart, universe)
+                monitor.refresh_subscriptions()
                 last_daily_date = now.date()
             except Exception as e:
                 print("ATH daily snapshot failed", e, flush=True)
@@ -410,3 +424,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
