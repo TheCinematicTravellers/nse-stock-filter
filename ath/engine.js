@@ -2,6 +2,12 @@ export const BASE_CAPITAL = 100000;
 
 const n = (value) => Number(value);
 const round = (value) => Number(n(value).toFixed(4));
+const transition = (setup, patch, time) => ({
+  ...setup,
+  ...patch,
+  statusUpdatedAt: time ?? setup.statusUpdatedAt ?? null,
+  updatedAt: time ?? setup.updatedAt ?? null,
+});
 
 export function isNewAth(todayHigh, storedAth) {
   return n(todayHigh) > n(storedAth);
@@ -44,6 +50,8 @@ export function buildSetup(event, tradingDate) {
     riskAmount: round(quantity * riskPerShare),
     target1R: round(plannedEntry + riskPerShare),
     status: 'PENDING_D1',
+    statusUpdatedAt: event.detectedAt ?? null,
+    updatedAt: event.detectedAt ?? null,
     entryReason: null,
     entryTime: null,
     invalidationTime: null,
@@ -65,17 +73,22 @@ export function applyD1Tick(setup, candle) {
   const highBroken = high > setup.setupHigh;
   const lowBroken = low < setup.setupLow;
   if (highBroken && lowBroken) {
-    return { ...setup, status: 'AMBIGUOUS', ambiguity: 'HIGH_AND_LOW_BROKEN_SAME_CANDLE' };
+    return transition(setup, {
+      status: 'AMBIGUOUS',
+      ambiguity: 'HIGH_AND_LOW_BROKEN_SAME_CANDLE',
+    }, candle.time);
   }
   if (lowBroken) {
-    return { ...setup, status: 'INVALIDATED', invalidationTime: candle.time };
+    return transition(setup, {
+      status: 'INVALIDATED',
+      invalidationTime: candle.time,
+    }, candle.time);
   }
   if (highBroken || open > setup.setupHigh) {
     const actualEntry = open > setup.setupHigh ? open : setup.setupHigh;
     const riskPerShare = actualEntry - setup.setupLow;
     const quantity = quantityForCapital(BASE_CAPITAL, actualEntry);
-    return {
-      ...setup,
+    return transition(setup, {
       status: 'TRIGGERED',
       actualEntry: round(actualEntry),
       quantity,
@@ -85,12 +98,12 @@ export function applyD1Tick(setup, candle) {
       target1R: round(actualEntry + riskPerShare),
       entryReason: open > setup.setupHigh ? 'GAP_UP_OPEN' : 'HIGH_BREAK',
       entryTime: candle.time,
-    };
+    }, candle.time);
   }
   return setup;
 }
 
-export function expireD1(setup, tradingDate) {
+export function expireD1(setup, tradingDate, updatedAt = null) {
   if (setup.status !== 'PENDING_D1' || setup.tradingDate !== tradingDate) return setup;
-  return { ...setup, status: 'EXPIRED' };
+  return transition(setup, { status: 'EXPIRED' }, updatedAt);
 }

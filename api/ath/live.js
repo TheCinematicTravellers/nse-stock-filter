@@ -27,7 +27,7 @@ export default async function handler(req, res) {
         if (setup.status === 'PENDING_D1') setup = applyD1Tick(setup, candle);
         else if (setup.status === 'TRIGGERED') setup = applyExitTick(setup, candle);
       }
-      if (expireDate && setup.status === 'PENDING_D1') setup = expireD1(setup, expireDate);
+      if (expireDate && setup.status === 'PENDING_D1') setup = expireD1(setup, expireDate, updatedAt);
 
       if (setup.status !== state.tradeSetups[i].status) {
         state.tradeSetups[i] = setup;
