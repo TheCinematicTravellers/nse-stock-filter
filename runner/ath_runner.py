@@ -6,7 +6,7 @@ Responsibilities:
 - Build the current NSE equity universe from NSE's official equity/ETF lists.
 - Match it to Angel One cash-market tokens.
 - Seed corporate-action-adjusted ATH baselines from Yahoo Finance.
-- After 17:00 IST, fetch the completed daily OHLC snapshot in batched market-data requests and send it to /api/ath/daily.
+- After 16:00 IST, fetch the completed daily OHLC snapshot in batched market-data requests and send it to /api/ath/daily.
 - During market hours, subscribe only to active D+1 setups and forward ticks to /api/ath/live.
 """
 from dotenv import load_dotenv
@@ -403,7 +403,7 @@ def main():
     last_refresh_minute = None
     while True:
         now = dt.datetime.now(IST)
-        if now.hour >= 17 and last_daily_date != now.date():
+        if now.hour >= 16 and last_daily_date != now.date():
             try:
                 daily_snapshot(smart, universe)
                 monitor.refresh_subscriptions()
