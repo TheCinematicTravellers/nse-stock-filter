@@ -8,6 +8,8 @@ import {
   expireD1,
   quantityForCapital,
 } from './engine.js';
+import { createAthState } from './state.js';
+import { detectDailyAth } from './daily.js';
 
 test('equal high is not a new ATH', () => {
   assert.equal(isNewAth(100, 100), false);
@@ -65,6 +67,48 @@ test('pending setup does not expire merely because D+1 session ended', () => {
   const unchanged = applyD1Tick(setup, { time: '2026-09-11T15:30:00+05:30', open: 121, high: 124.9, low: 118.1, close: 123 });
   const next = expireD1(unchanged, '2026-09-11');
   assert.equal(next.status, 'PENDING_D1');
+});
+
+test('new day creates a fresh setup after a prior setup was invalidated', () => {
+  const state = createAthState();
+  state.athMaster.ABC = { adjustedAthPrice: 100, athDate: '2026-09-14' };
+  state.athEvents.push(buildAthEvent('ABC', '2026-09-14', 100, 95, 99));
+  const prior = buildSetup(state.athEvents[0], '2026-09-15');
+  prior.status = 'INVALIDATED';
+  state.tradeSetups.push(prior);
+
+  const result = detectDailyAth(state, {
+    date: '2026-09-15',
+    detectedAt: '2026-09-15T17:05:00+05:30',
+    stocks: [{ symbol: 'ABC', active: true, securityType: 'EQUITY', currentPrice: 101 }],
+    dailyBars: { ABC: { date: '2026-09-15', high: 101, low: 97 } },
+    nextTradingDate: () => '2026-09-16',
+  });
+
+  assert.equal(result.created.length, 1);
+  assert.equal(result.created[0].setup.tradingDate, '2026-09-16');
+  assert.equal(result.state.tradeSetups.length, 2);
+});
+
+test('new day does not add a second setup when an existing setup is active', () => {
+  const state = createAthState();
+  state.athMaster.XYZ = { adjustedAthPrice: 100, athDate: '2026-09-14' };
+  state.athEvents.push(buildAthEvent('XYZ', '2026-09-14', 100, 95, 99));
+  const prior = buildSetup(state.athEvents[0], '2026-09-15');
+  prior.status = 'TRIGGERED';
+  state.tradeSetups.push(prior);
+
+  const result = detectDailyAth(state, {
+    date: '2026-09-15',
+    detectedAt: '2026-09-15T17:05:00+05:30',
+    stocks: [{ symbol: 'XYZ', active: true, securityType: 'EQUITY', currentPrice: 101 }],
+    dailyBars: { XYZ: { date: '2026-09-15', high: 101, low: 97 } },
+    nextTradingDate: () => '2026-09-16',
+  });
+
+  assert.equal(result.created.length, 0);
+  assert.equal(result.newAthSymbols.length, 0);
+  assert.equal(result.state.tradeSetups.length, 1);
 });
 
 test('same-candle D+1 high and low is explicitly ambiguous', () => {
