@@ -15,36 +15,26 @@
   <div><div class="muted">NSE • FORWARD TESTING ONLY</div><h1>ATH Breakout Monitor</h1><div class="muted">All NSE equities • D+1 breakout • 1R target • ₹1,00,000 base capital</div></div>
   <div id="updated" class="muted">Loading…</div>
 </header>
-
 <section class="controls">
   <div class="control"><label>Date</label><select id="dateSelect"></select></div>
   <div class="control"><label>Period</label><select id="periodSelect"><option value="selected_date">Selected Date</option><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="current_week">Current Week</option><option value="last_week">Last Week</option><option value="current_month">Current Month</option><option value="last_month">Last Month</option><option value="custom">Custom</option></select></div>
   <div class="control custom"><label>From</label><input id="fromDate" type="date"></div>
   <div class="control custom"><label>To</label><input id="toDate" type="date"></div>
 </section>
-
 <section id="cards" class="cards"></section>
-
 <nav class="tabs">
-  <button class="tab active" data-view="daily">Daily Results</button>
-  <button class="tab" data-view="ath">New ATH</button>
-  <button class="tab" data-view="active">Active / Pending</button>
-  <button class="tab" data-view="master">ATH Master</button>
+  <button class="tab active" data-view="daily">Daily Results</button><button class="tab" data-view="ath">New ATH</button><button class="tab" data-view="active">Active / Pending</button><button class="tab" data-view="master">ATH Master</button>
 </nav>
-
 <section id="daily" class="view active"><div class="panel"><h2>📊 Lifecycle results</h2><div id="dailyTable"></div></div></section>
 <section id="ath" class="view"><div class="panel"><h2>🚨 New ATH events</h2><div id="athEvents"></div></div></section>
 <section id="active" class="view"><div class="panel"><h2>⚡ Setups still waiting / currently open</h2><div id="activeTable"></div></div></section>
 <section id="master" class="view"><div class="panel"><h2>ATH Master</h2><div id="masterTable"></div></div></section>
 </div>
-
 <script type="module">
 import { statusLabel, activityDate, filterByDateRange } from '/ath/reporting.js';
-
 const IST='Asia/Kolkata';
 let state={tradeSetups:[],athEvents:[],athMaster:{},updatedAt:null};
-let todayIst='';
-
+let todayIstDate='';
 const fmt=n=>n==null||n===''?'—':Number(n).toFixed(2);
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const dateOnly=v=>{const m=String(v??'').match(/^\d{4}-\d{2}-\d{2}/);return m?m[0]:''};
@@ -53,85 +43,21 @@ const statusClass=s=>({PENDING_D1:'pending',TRIGGERED:'triggered',TARGET_HIT:'ta
 const resultText=x=>x.resultR==null?'—':`${x.resultR>0?'+':''}${x.resultR}R`;
 const resultClass=x=>x.resultR>0?'result-plus':x.resultR<0?'result-minus':'';
 const row=cells=>'<tr>'+cells.map(x=>'<td>'+x+'</td>').join('')+'</tr>';
-
 function getTodayIst(){return new Intl.DateTimeFormat('en-CA',{timeZone:IST,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
-function uniqueDates(){
-  const dates=new Set([todayIst]);
-  state.athEvents.forEach(e=>{if(e.athDate)dates.add(e.athDate)});
-  state.tradeSetups.forEach(x=>{[x.tradingDate,activityDate(x),dateOnly(x.entryTime),dateOnly(x.exitTime),dateOnly(x.invalidationTime)].forEach(d=>{if(d)dates.add(d)})});
-  return [...dates].sort().reverse();
-}
-function populateDates(){
-  const el=document.getElementById('dateSelect');const current=el.value||todayIst;
-  el.innerHTML=uniqueDates().map(d=>`<option value="${d}">${d===todayIst?'Today • ':''}${d}</option>`).join('');
-  el.value=uniqueDates().includes(current)?current:todayIst;
-}
-function getRange(){
-  const period=document.getElementById('periodSelect').value;
-  if(period==='selected_date')return {range:'custom',from:document.getElementById('dateSelect').value,to:document.getElementById('dateSelect').value};
-  if(period==='custom')return {range:'custom',from:document.getElementById('fromDate').value,to:document.getElementById('toDate').value};
-  return {range:period};
-}
-function filteredSetups(){const r=getRange();return filterByDateRange(state.tradeSetups,r.range,todayIst,r.from,r.to)}
-function rangeLabel(){const r=getRange();if(r.range==='custom')return `${r.from||'—'} → ${r.to||'—'}`;return document.getElementById('periodSelect').selectedOptions[0].text}
-
-function renderCards(setups){
-  const counts={PENDING_D1:0,TRIGGERED:0,TARGET_HIT:0,STOP_LOSS:0,INVALIDATED:0,EXPIRED:0,AMBIGUOUS:0,AMBIGUOUS_EXIT:0};
-  setups.forEach(x=>{if(counts[x.status]!==undefined)counts[x.status]++});
-  const cards=[['PENDING',counts.PENDING_D1,'pending'],['TRIGGERED',counts.TRIGGERED,'triggered'],['TARGET',counts.TARGET_HIT,'target'],['SL',counts.STOP_LOSS,'sl'],['INVALIDATED',counts.INVALIDATED,'invalidated'],['EXPIRED',counts.EXPIRED,'expired'],['AMBIGUOUS',counts.AMBIGUOUS+counts.AMBIGUOUS_EXIT,'ambiguous'],['TOTAL',setups.length,'']];
-  document.getElementById('cards').innerHTML=cards.map(([name,count,cls])=>`<div class="card"><small>${name}</small><strong class="${cls}">${count}</strong></div>`).join('');
-}
-
-function renderDaily(setups){
-  const html='<table><thead><tr><th>Stock</th><th>ATH Date</th><th>D+1</th><th>Status</th><th>Entry</th><th>SL</th><th>Target 1R</th><th>Exit</th><th>Result</th><th>Updated</th></tr></thead><tbody>'+
-    setups.slice().sort((a,b)=>String(activityDate(b)).localeCompare(String(activityDate(a)))||a.symbol.localeCompare(b.symbol)).map(x=>row([
-      `<b>${esc(x.symbol)}</b>`,x.setupDate||'—',x.tradingDate||'—',`<span class="status ${statusClass(x.status)}">${statusLabel(x.status)}</span>`,fmt(x.actualEntry??x.plannedEntry),fmt(x.setupLow),fmt(x.target1R),fmt(x.exitPrice),`<span class="${resultClass(x)}">${resultText(x)}</span>`,fmtDate(x.updatedAt||x.statusUpdatedAt||x.exitTime||x.entryTime||x.invalidationTime)
-    ])).join('')+(setups.length?'':'<tr><td colspan="10" class="empty">No lifecycle activity for this period.</td></tr>')+'</tbody></table>';
-  document.getElementById('dailyTable').innerHTML=html;
-}
-
-function renderActive(){
-  const active=state.tradeSetups.filter(x=>['PENDING_D1','TRIGGERED'].includes(x.status));
-  document.getElementById('activeTable').innerHTML='<table><thead><tr><th>Stock</th><th>ATH Date</th><th>D+1</th><th>Status</th><th>Entry</th><th>SL</th><th>Target</th><th>Qty</th><th>Updated</th></tr></thead><tbody>'+active.slice().sort((a,b)=>a.tradingDate.localeCompare(b.tradingDate)||a.symbol.localeCompare(b.symbol)).map(x=>row([`<b>${esc(x.symbol)}</b>`,x.setupDate||'—',x.tradingDate,`<span class="status ${statusClass(x.status)}">${statusLabel(x.status)}</span>`,fmt(x.actualEntry??x.plannedEntry),fmt(x.setupLow),fmt(x.target1R),x.quantity,fmtDate(x.updatedAt||x.statusUpdatedAt)])).join('')+(active.length?'':'<tr><td colspan="9" class="empty">No active or pending setups.</td></tr>')+'</tbody></table>';
-}
-
-function renderAth(){
-  const selectedRange=getRange();
-  let events=state.athEvents;
-  if(selectedRange.range==='custom'){
-    events=events.filter(e=>e.athDate>=selectedRange.from&&e.athDate<=selectedRange.to);
-  } else {
-    const temp=state.tradeSetups.filter(x=>x.setupDate);
-    const allowed=new Set(filterByDateRange(temp,selectedRange.range,todayIst(),selectedRange.from,selectedRange.to).map(x=>x.setupDate));
-    events=events.filter(e=>allowed.has(e.athDate));
-  }
-  document.getElementById('athEvents').innerHTML='<div class="event-grid">'+events.slice().sort((a,b)=>String(b.athDate).localeCompare(String(a.athDate))||a.symbol.localeCompare(b.symbol)).map(e=>`<div class="event-card"><b>${esc(e.symbol)}</b><div class="date-note">ATH ${e.athDate} · D+1 ${(state.tradeSetups.find(x=>x.athEventId===e.id)||{}).tradingDate||'—'}</div><div>High ₹${fmt(e.athHigh)} · Low/SL ₹${fmt(e.athLow)}</div><div class="muted">Previous ATH ₹${fmt(e.previousAth)}</div></div>`).join('')+(events.length?'':'<div class="empty">No NEW ATH events for this period.</div>')+'</div>';
-}
-
-function renderMaster(){
-  const entries=Object.entries(state.athMaster).sort((a,b)=>a[0].localeCompare(b[0]));
-  document.getElementById('masterTable').innerHTML='<table><thead><tr><th>Stock</th><th>Adjusted ATH</th><th>ATH Date</th><th>Source</th><th>Updated</th></tr></thead><tbody>'+entries.map(([symbol,x])=>row([esc(symbol),fmt(x.adjustedAthPrice),x.athDate||'—',esc(x.source||'—'),fmtDate(x.updatedAt)])).join('')+(entries.length?'':'<tr><td colspan="5" class="empty">Baseline not loaded.</td></tr>')+'</tbody></table>';
-}
-
-function render(){
-  populateDates();
-  const setups=filteredSetups();
-  renderCards(setups);renderDaily(setups);renderAth();renderActive();renderMaster();
-  document.getElementById('updated').textContent='Updated '+fmtDate(state.updatedAt);
-}
-
-async function load(){
-  try{const r=await fetch('/api/ath/state',{cache:'no-store'});const data=await r.json();if(!r.ok)throw Error(data.error||r.status);state=data;todayIst=getTodayIst();render();}
-  catch(e){document.getElementById('updated').textContent='API error: '+e.message}
-}
-
+function uniqueDates(){const dates=new Set([todayIstDate]);state.athEvents.forEach(e=>{if(e.athDate)dates.add(e.athDate)});state.tradeSetups.forEach(x=>{[x.tradingDate,activityDate(x),dateOnly(x.entryTime),dateOnly(x.exitTime),dateOnly(x.invalidationTime)].forEach(d=>{if(d)dates.add(d)})});return [...dates].sort().reverse()}
+function populateDates(){const el=document.getElementById('dateSelect');const current=el.value||todayIstDate;const dates=uniqueDates();el.innerHTML=dates.map(d=>`<option value="${d}">${d===todayIstDate?'Today • ':''}${d}</option>`).join('');el.value=dates.includes(current)?current:todayIstDate}
+function getRange(){const period=document.getElementById('periodSelect').value;if(period==='selected_date')return {range:'custom',from:document.getElementById('dateSelect').value,to:document.getElementById('dateSelect').value};if(period==='custom')return {range:'custom',from:document.getElementById('fromDate').value,to:document.getElementById('toDate').value};return {range:period}}
+function filteredSetups(){const r=getRange();return filterByDateRange(state.tradeSetups,r.range,todayIstDate,r.from,r.to)}
+function renderCards(setups){const counts={PENDING_D1:0,TRIGGERED:0,TARGET_HIT:0,STOP_LOSS:0,INVALIDATED:0,EXPIRED:0,AMBIGUOUS:0,AMBIGUOUS_EXIT:0};setups.forEach(x=>{if(counts[x.status]!==undefined)counts[x.status]++});const cards=[['PENDING',counts.PENDING_D1,'pending'],['TRIGGERED',counts.TRIGGERED,'triggered'],['TARGET',counts.TARGET_HIT,'target'],['SL',counts.STOP_LOSS,'sl'],['INVALIDATED',counts.INVALIDATED,'invalidated'],['EXPIRED',counts.EXPIRED,'expired'],['AMBIGUOUS',counts.AMBIGUOUS+counts.AMBIGUOUS_EXIT,'ambiguous'],['TOTAL',setups.length,'']];document.getElementById('cards').innerHTML=cards.map(([name,count,cls])=>`<div class="card"><small>${name}</small><strong class="${cls}">${count}</strong></div>`).join('')}
+function renderDaily(setups){const html='<table><thead><tr><th>Stock</th><th>ATH Date</th><th>D+1</th><th>Status</th><th>Entry</th><th>SL</th><th>Target 1R</th><th>Exit</th><th>Result</th><th>Updated</th></tr></thead><tbody>'+setups.slice().sort((a,b)=>String(activityDate(b)).localeCompare(String(activityDate(a)))||a.symbol.localeCompare(b.symbol)).map(x=>row([`<b>${esc(x.symbol)}</b>`,x.setupDate||'—',x.tradingDate||'—',`<span class="status ${statusClass(x.status)}">${statusLabel(x.status)}</span>`,fmt(x.actualEntry??x.plannedEntry),fmt(x.setupLow),fmt(x.target1R),fmt(x.exitPrice),`<span class="${resultClass(x)}">${resultText(x)}</span>`,fmtDate(x.updatedAt||x.statusUpdatedAt||x.exitTime||x.entryTime||x.invalidationTime)])).join('')+(setups.length?'':'<tr><td colspan="10" class="empty">No lifecycle activity for this period.</td></tr>')+'</tbody></table>';document.getElementById('dailyTable').innerHTML=html}
+function renderActive(){const active=state.tradeSetups.filter(x=>['PENDING_D1','TRIGGERED'].includes(x.status));document.getElementById('activeTable').innerHTML='<table><thead><tr><th>Stock</th><th>ATH Date</th><th>D+1</th><th>Status</th><th>Entry</th><th>SL</th><th>Target</th><th>Qty</th><th>Updated</th></tr></thead><tbody>'+active.slice().sort((a,b)=>a.tradingDate.localeCompare(b.tradingDate)||a.symbol.localeCompare(b.symbol)).map(x=>row([`<b>${esc(x.symbol)}</b>`,x.setupDate||'—',x.tradingDate,`<span class="status ${statusClass(x.status)}">${statusLabel(x.status)}</span>`,fmt(x.actualEntry??x.plannedEntry),fmt(x.setupLow),fmt(x.target1R),x.quantity,fmtDate(x.updatedAt||x.statusUpdatedAt)])).join('')+(active.length?'':'<tr><td colspan="9" class="empty">No active or pending setups.</td></tr>')+'</tbody></table>'}
+function renderAth(){const selectedRange=getRange();let events=state.athEvents;if(selectedRange.range==='custom'){events=events.filter(e=>e.athDate>=selectedRange.from&&e.athDate<=selectedRange.to)}else{const temp=state.tradeSetups.filter(x=>x.setupDate);const allowed=new Set(filterByDateRange(temp,selectedRange.range,todayIstDate,selectedRange.from,selectedRange.to).map(x=>x.setupDate));events=events.filter(e=>allowed.has(e.athDate))}document.getElementById('athEvents').innerHTML='<div class="event-grid">'+events.slice().sort((a,b)=>String(b.athDate).localeCompare(String(a.athDate))||a.symbol.localeCompare(b.symbol)).map(e=>`<div class="event-card"><b>${esc(e.symbol)}</b><div class="date-note">ATH ${e.athDate} · D+1 ${(state.tradeSetups.find(x=>x.athEventId===e.id)||{}).tradingDate||'—'}</div><div>High ₹${fmt(e.athHigh)} · Low/SL ₹${fmt(e.athLow)}</div><div class="muted">Previous ATH ₹${fmt(e.previousAth)}</div></div>`).join('')+(events.length?'':'<div class="empty">No NEW ATH events for this period.</div>')+'</div>'}
+function renderMaster(){const entries=Object.entries(state.athMaster).sort((a,b)=>a[0].localeCompare(b[0]));document.getElementById('masterTable').innerHTML='<table><thead><tr><th>Stock</th><th>Adjusted ATH</th><th>ATH Date</th><th>Source</th><th>Updated</th></tr></thead><tbody>'+entries.map(([symbol,x])=>row([esc(symbol),fmt(x.adjustedAthPrice),x.athDate||'—',esc(x.source||'—'),fmtDate(x.updatedAt)])).join('')+(entries.length?'':'<tr><td colspan="5" class="empty">Baseline not loaded.</td></tr>')+'</tbody></table>'}
+function render(){populateDates();const setups=filteredSetups();renderCards(setups);renderDaily(setups);renderAth();renderActive();renderMaster();document.getElementById('updated').textContent='Updated '+fmtDate(state.updatedAt)}
+async function load(){try{const r=await fetch('/api/ath/state',{cache:'no-store'});const data=await r.json();if(!r.ok)throw Error(data.error||r.status);state=data;todayIstDate=getTodayIst();render()}catch(e){document.getElementById('updated').textContent='API error: '+e.message}}
 document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));btn.classList.add('active');document.getElementById(btn.dataset.view).classList.add('active')}));
-document.getElementById('dateSelect').addEventListener('change',render);
-document.getElementById('periodSelect').addEventListener('change',()=>{const custom=document.querySelectorAll('.custom');const isCustom=document.getElementById('periodSelect').value==='custom';custom.forEach(x=>x.style.display=isCustom?'flex':'none');document.getElementById('dateSelect').disabled=document.getElementById('periodSelect').value!=='selected_date';render()});
-document.getElementById('fromDate').addEventListener('change',render);document.getElementById('toDate').addEventListener('change',render);
-
-todayIst=getTodayIst();document.getElementById('fromDate').value=todayIst;document.getElementById('toDate').value=todayIst;document.querySelectorAll('.custom').forEach(x=>x.style.display='none');
-load();setInterval(load,10000);
+document.getElementById('dateSelect').addEventListener('change',render);document.getElementById('periodSelect').addEventListener('change',()=>{const custom=document.querySelectorAll('.custom');const isCustom=document.getElementById('periodSelect').value==='custom';custom.forEach(x=>x.style.display=isCustom?'flex':'none');document.getElementById('dateSelect').disabled=document.getElementById('periodSelect').value!=='selected_date';render()});document.getElementById('fromDate').addEventListener('change',render);document.getElementById('toDate').addEventListener('change',render);
+todayIstDate=getTodayIst();document.getElementById('fromDate').value=todayIstDate;document.getElementById('toDate').value=todayIstDate;document.querySelectorAll('.custom').forEach(x=>x.style.display='none');load();setInterval(load,10000);
 </script>
 </body>
 </html>
