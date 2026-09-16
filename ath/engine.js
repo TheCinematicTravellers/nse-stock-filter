@@ -63,12 +63,12 @@ export function buildSetup(event, tradingDate) {
 }
 
 export function applyD1Tick(setup, candle) {
-  if (!['PENDING_D1'].includes(setup.status)) return setup;
+  if (setup.status !== 'PENDING_D1') return setup;
   const high = n(candle.high);
   const low = n(candle.low);
   const open = n(candle.open);
   const date = String(candle.time).slice(0, 10);
-  if (date !== setup.tradingDate) return setup;
+  if (date < String(setup.tradingDate)) return setup;
 
   const highBroken = high > setup.setupHigh;
   const lowBroken = low < setup.setupLow;
@@ -101,9 +101,4 @@ export function applyD1Tick(setup, candle) {
     }, candle.time);
   }
   return setup;
-}
-
-export function expireD1(setup, tradingDate, updatedAt = null) {
-  if (setup.status !== 'PENDING_D1' || setup.tradingDate !== tradingDate) return setup;
-  return transition(setup, { status: 'EXPIRED' }, updatedAt);
 }
