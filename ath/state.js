@@ -11,6 +11,13 @@ export const createAthState = () => ({
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+const ACTIVE_SETUP_STATUSES = new Set([
+  'PENDING_D1',
+  'TRIGGERED',
+  'AMBIGUOUS',
+  'AMBIGUOUS_EXIT',
+]);
+
 export function normalizeAthState(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return createAthState();
   const base = createAthState();
@@ -25,6 +32,12 @@ export function normalizeAthState(input) {
   };
 }
 
+export function hasActiveSetup(state, symbol) {
+  return state.tradeSetups.some((setup) => (
+    setup.symbol === symbol && ACTIVE_SETUP_STATUSES.has(setup.status)
+  ));
+}
+
 export function recordNewAth(inputState, data) {
   const state = normalizeAthState(inputState);
   const eventId = `${data.symbol}-${data.athDate}`;
@@ -37,10 +50,8 @@ export function recordNewAth(inputState, data) {
     detectedAt: data.detectedAt ?? null,
     telegramAlertSentAt: null,
   };
-  const setup = buildSetup(event, data.tradingDate);
 
   state.athEvents.push(event);
-  state.tradeSetups.push(setup);
   state.athMaster[data.symbol] = {
     adjustedAthPrice: event.athHigh,
     athDate: event.athDate,
@@ -48,6 +59,14 @@ export function recordNewAth(inputState, data) {
     rawReferenceHigh: data.rawReferenceHigh ?? null,
     updatedAt: data.detectedAt ?? null,
   };
+
+  if (hasActiveSetup(state, data.symbol)) {
+    state.updatedAt = data.detectedAt ?? null;
+    return { state, created: false, event, setup: null, skippedReason: 'ACTIVE_SETUP_EXISTS' };
+  }
+
+  const setup = buildSetup(event, data.tradingDate);
+  state.tradeSetups.push(setup);
   state.updatedAt = data.detectedAt ?? null;
 
   return { state, created: true, event, setup };
