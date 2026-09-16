@@ -401,7 +401,6 @@ def main():
 
     last_daily_date = None
     last_refresh_minute = None
-    last_expiry_date = None
     while True:
         now = dt.datetime.now(IST)
         if now.hour >= 17 and last_daily_date != now.date():
@@ -411,12 +410,6 @@ def main():
                 last_daily_date = now.date()
             except Exception as e:
                 print("ATH daily snapshot failed", e, flush=True)
-        if now.hour == 15 and now.minute >= 31 and last_expiry_date != now.date():
-            try:
-                post("/api/ath/live", {"candlesBySymbol": {}, "expireDate": now.date().isoformat(), "updatedAt": now.isoformat()})
-                last_expiry_date = now.date()
-            except Exception as e:
-                print("ATH expiry failed", e, flush=True)
         minute_key = now.replace(second=0, microsecond=0)
         if last_refresh_minute != minute_key and 9 <= now.hour < 16:
             monitor.refresh_subscriptions()
@@ -426,5 +419,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
