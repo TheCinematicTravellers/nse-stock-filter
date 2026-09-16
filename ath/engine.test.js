@@ -60,11 +60,11 @@ test('normal high break triggers at setup high', () => {
   assert.equal(next.actualEntry, 125);
 });
 
-test('D+1 with neither trigger nor invalidation expires at D+1 close', () => {
+test('pending setup does not expire merely because D+1 session ended', () => {
   const setup = buildSetup(buildAthEvent('ABC', '2026-09-10', 125, 118, 120), '2026-09-11');
   const unchanged = applyD1Tick(setup, { time: '2026-09-11T15:30:00+05:30', open: 121, high: 124.9, low: 118.1, close: 123 });
   const next = expireD1(unchanged, '2026-09-11');
-  assert.equal(next.status, 'EXPIRED');
+  assert.equal(next.status, 'PENDING_D1');
 });
 
 test('same-candle D+1 high and low is explicitly ambiguous', () => {
