@@ -36,14 +36,17 @@ export default async function handler(req, res) {
     }
 
     let state = await readAthState();
-    const expectedCount = Object.keys(state.athMaster || {}).length;
     const observedCount = Object.keys(dailyBars).length;
-    const completenessFloor = expectedCount >= 1000 ? expectedCount - 2 : expectedCount;
-    if (!snapshotComplete || (expectedCount >= 1000 && observedCount < completenessFloor)) {
+    const submittedUniverseCount = Number(universeCount ?? stocks.length);
+    const expectedCurrentUniverse = Number.isFinite(submittedUniverseCount) && submittedUniverseCount > 0
+      ? submittedUniverseCount
+      : stocks.length;
+    const completenessFloor = expectedCurrentUniverse >= 1000 ? expectedCurrentUniverse - 2 : expectedCurrentUniverse;
+    if (!snapshotComplete || observedCount < completenessFloor) {
       return res.status(409).json({
         error: 'ATH daily snapshot is incomplete; refusing to create partial NEW ATH events',
-        expectedCount,
-        universeCount,
+        expectedCount: expectedCurrentUniverse,
+        universeCount: submittedUniverseCount,
         barCount: observedCount,
         completenessFloor,
       });
