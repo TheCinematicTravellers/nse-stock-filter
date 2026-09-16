@@ -1,6 +1,6 @@
 import { requireAthSecret } from './auth.js';
 import { readAthState, writeAthState } from '../../ath/store.js';
-import { applyD1Tick, expireD1 } from '../../ath/engine.js';
+import { applyD1Tick } from '../../ath/engine.js';
 import { applyExitTick } from '../../ath/exits.js';
 import { formatTradeAlert, sendOnce } from '../../ath/telegram.js';
 
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   try {
     requireAthSecret(req);
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-    const { candlesBySymbol, expireDate, updatedAt } = req.body || {};
+    const { candlesBySymbol, updatedAt } = req.body || {};
     if (!candlesBySymbol || typeof candlesBySymbol !== 'object') {
       return res.status(400).json({ error: 'candlesBySymbol is required' });
     }
@@ -27,7 +27,6 @@ export default async function handler(req, res) {
         if (setup.status === 'PENDING_D1') setup = applyD1Tick(setup, candle);
         else if (setup.status === 'TRIGGERED') setup = applyExitTick(setup, candle);
       }
-      if (expireDate && setup.status === 'PENDING_D1') setup = expireD1(setup, expireDate, updatedAt);
 
       if (setup.status !== state.tradeSetups[i].status) {
         state.tradeSetups[i] = setup;
