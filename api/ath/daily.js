@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   try {
     requireAthSecret(req);
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-    if (hourIst() < 17) return res.status(409).json({ error: 'ATH daily detection is only allowed after 5 PM IST' });
+    if (hourIst() < 16) return res.status(409).json({ error: 'ATH daily detection is only allowed after 4 PM IST' });
 
     const {
       date,
