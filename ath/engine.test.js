@@ -5,7 +5,6 @@ import {
   buildAthEvent,
   buildSetup,
   applyD1Tick,
-  expireD1,
   quantityForCapital,
 } from './engine.js';
 import { createAthState } from './state.js';
@@ -51,7 +50,7 @@ test('low-first invalidates and later high cannot trigger', () => {
   const setup = buildSetup(buildAthEvent('ABC', '2026-09-10', 125, 118, 120), '2026-09-11');
   const invalid = applyD1Tick(setup, { time: '2026-09-11T10:00:00+05:30', open: 123, high: 124, low: 117.9, close: 123 });
   assert.equal(invalid.status, 'INVALIDATED');
-  const later = applyD1Tick(invalid, { time: '2026-09-11T11:00:00+05:30', open: 123, high: 126, low: 122, close: 125 });
+  const later = applyD1Tick(invalid, { time: '2026-09-12T11:00:00+05:30', open: 123, high: 126, low: 122, close: 125 });
   assert.equal(later.status, 'INVALIDATED');
 });
 
@@ -62,11 +61,13 @@ test('normal high break triggers at setup high', () => {
   assert.equal(next.actualEntry, 125);
 });
 
-test('pending setup does not expire merely because D+1 session ended', () => {
+test('pending setup stays alive after D+1 and can trigger on a later day', () => {
   const setup = buildSetup(buildAthEvent('ABC', '2026-09-10', 125, 118, 120), '2026-09-11');
-  const unchanged = applyD1Tick(setup, { time: '2026-09-11T15:30:00+05:30', open: 121, high: 124.9, low: 118.1, close: 123 });
-  const next = expireD1(unchanged, '2026-09-11');
-  assert.equal(next.status, 'PENDING_D1');
+  const d1Close = applyD1Tick(setup, { time: '2026-09-11T15:30:00+05:30', open: 121, high: 124.9, low: 118.1, close: 123 });
+  assert.equal(d1Close.status, 'PENDING_D1');
+  const later = applyD1Tick(d1Close, { time: '2026-09-14T10:00:00+05:30', open: 124, high: 125.1, low: 123, close: 125 });
+  assert.equal(later.status, 'TRIGGERED');
+  assert.equal(later.actualEntry, 125);
 });
 
 test('new day creates a fresh setup after a prior setup was invalidated', () => {
@@ -109,6 +110,26 @@ test('new day does not add a second setup when an existing setup is active', () 
   assert.equal(result.created.length, 0);
   assert.equal(result.newAthSymbols.length, 0);
   assert.equal(result.state.tradeSetups.length, 1);
+});
+
+test('completed setup does not block a genuinely new ATH setup', () => {
+  const state = createAthState();
+  state.athMaster.XYZ = { adjustedAthPrice: 100, athDate: '2026-09-14' };
+  state.athEvents.push(buildAthEvent('XYZ', '2026-09-14', 100, 95, 99));
+  const prior = buildSetup(state.athEvents[0], '2026-09-15');
+  prior.status = 'TARGET_HIT';
+  state.tradeSetups.push(prior);
+
+  const result = detectDailyAth(state, {
+    date: '2026-09-15',
+    detectedAt: '2026-09-15T17:05:00+05:30',
+    stocks: [{ symbol: 'XYZ', active: true, securityType: 'EQUITY', currentPrice: 101 }],
+    dailyBars: { XYZ: { date: '2026-09-15', high: 101, low: 97 } },
+    nextTradingDate: () => '2026-09-16',
+  });
+
+  assert.equal(result.created.length, 1);
+  assert.equal(result.state.tradeSetups.length, 2);
 });
 
 test('same-candle D+1 high and low is explicitly ambiguous', () => {
