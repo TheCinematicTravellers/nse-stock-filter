@@ -16,26 +16,26 @@ export function formatNewAthAlert(event, setup) {
     `Target 1R: ₹${setup.target1R}`,
     `Base Capital: ₹${setup.baseCapital}`,
     `Qty: ${setup.quantity}`,
-    'Rule: D+1 breaks prior ATH high; low-first invalidates.',
+    'Rule: High break triggers; low-first invalidates. No time expiry.',
   ].join('\n');
 }
 
 export function formatNewAthSummary(created) {
   const lines = [
-    '🚨 NEW ATH SUMMARY',
-    `Total new ATHs: ${created.length}`,
+    '🚨 NEW ATH / SETUP SUMMARY',
+    `Total new setups: ${created.length}`,
     '',
   ];
 
   for (const { event, setup } of created) {
     lines.push(
-      `${event.symbol} | ATH ₹${event.athHigh} | Low/SL ₹${event.athLow}`,
-      `D+1 ${setup.tradingDate} | Entry ₹${setup.plannedEntry} | 1R ₹${setup.target1R} | Qty ${setup.quantity}`,
+      `${event.symbol} | NEW ATH ₹${event.athHigh} | Low/SL ₹${event.athLow}`,
+      `Next eligible date ${setup.tradingDate} | Entry ₹${setup.plannedEntry} | 1R ₹${setup.target1R} | Qty ${setup.quantity}`,
       '',
     );
   }
 
-  lines.push('Rule: D+1 breaks prior ATH high; low-first invalidates; setup expires after D+1.');
+  lines.push('Rule: High break triggers; low-first invalidates. Pending setups remain active until a price outcome; triggered positions remain active until SL or 1R target.');
   return lines.join('\n').trim();
 }
 
