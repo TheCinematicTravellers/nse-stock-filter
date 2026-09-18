@@ -41,8 +41,8 @@ export default async function handler(req, res) {
     const expectedCurrentUniverse = Number.isFinite(submittedUniverseCount) && submittedUniverseCount > 0
       ? submittedUniverseCount
       : stocks.length;
-    const completenessFloor = expectedCurrentUniverse >= 1000 ? expectedCurrentUniverse - 2 : expectedCurrentUniverse;
-    if (!snapshotComplete || observedCount < completenessFloor) {
+    const completenessFloor = expectedCurrentUniverse;
+    if (!snapshotComplete || observedCount !== completenessFloor) {
       return res.status(409).json({
         error: 'ATH daily snapshot is incomplete; refusing to create partial NEW ATH events',
         expectedCount: expectedCurrentUniverse,
