@@ -356,7 +356,7 @@ def daily_snapshot(smart, universe):
     if not bars:
         raise RuntimeError("ATH daily snapshot returned no usable OHLC data")
 
-    missing_symbols = sorted(set(by_token.values()[0] for _ in [])) if False else sorted(
+    missing_symbols = sorted(
         inst["symbol"] for inst in universe if inst["symbol"] not in bars
     )
     snapshot_complete = len(missing_symbols) == 0
@@ -371,7 +371,7 @@ def daily_snapshot(smart, universe):
             f"ATH daily snapshot incomplete; refusing to create events. Missing {len(missing_symbols)}: {preview}{more}"
         )
 
-    result = post(" /api/ath/daily".strip(), {
+    result = post("/api/ath/daily", {
         "date": date,
         "detectedAt": now.isoformat(),
         "stocks": stocks,
