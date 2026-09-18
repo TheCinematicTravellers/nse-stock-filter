@@ -77,7 +77,26 @@ def download_text(url):
     return r.text
 
 
-def build_universe():
+def intraday_eligible_symbols(smart):
+    """Return NSE symbols Angel One currently allows for intraday trading."""
+    raw = smart.nseIntraday() or {}
+    if not raw.get("status"):
+        raise RuntimeError(f"Angel NSE intraday eligibility failed: {raw}")
+
+    rows = raw.get("data") or []
+    allowed = {
+        str(row.get("SymbolName", "")).strip().upper()
+        for row in rows
+        if str(row.get("SymbolName", "")).strip()
+    }
+    if len(allowed) < 1000:
+        raise RuntimeError(
+            f"Safety stop: Angel NSE intraday list looks incomplete ({len(allowed)} symbols)"
+        )
+    return allowed
+
+
+def build_universe(smart):
     equity_text = download_text(NSE_EQUITY_URL)
     etf_text = download_text(NSE_ETF_URL)
 
@@ -104,6 +123,9 @@ def build_universe():
     }
 
     allowed = equity_symbols - etf_symbols
+    intraday_allowed = intraday_eligible_symbols(smart)
+    allowed &= intraday_allowed
+    print(f"ATH universe candidates after NSE EQ/ETF + Angel intraday filter: {len(allowed)}", flush=True)
     instruments = requests.get(ANGEL_MASTER_URL, timeout=60).json()
     out, seen = [], set()
 
@@ -334,7 +356,29 @@ def daily_snapshot(smart, universe):
     if not bars:
         raise RuntimeError("ATH daily snapshot returned no usable OHLC data")
 
-    result = post("/api/ath/daily", {"date": date, "detectedAt": now.isoformat(), "stocks": stocks, "dailyBars": bars})
+    missing_symbols = sorted(set(by_token.values()[0] for _ in [])) if False else sorted(
+        inst["symbol"] for inst in universe if inst["symbol"] not in bars
+    )
+    snapshot_complete = len(missing_symbols) == 0
+    print(
+        f"ATH daily snapshot complete={snapshot_complete}: {len(bars)}/{len(universe)}",
+        flush=True,
+    )
+    if not snapshot_complete:
+        preview = ", ".join(missing_symbols[:25])
+        more = "" if len(missing_symbols) <= 25 else f" ... +{len(missing_symbols) - 25} more"
+        raise RuntimeError(
+            f"ATH daily snapshot incomplete; refusing to create events. Missing {len(missing_symbols)}: {preview}{more}"
+        )
+
+    result = post(" /api/ath/daily".strip(), {
+        "date": date,
+        "detectedAt": now.isoformat(),
+        "stocks": stocks,
+        "dailyBars": bars,
+        "universeCount": len(universe),
+        "snapshotComplete": True,
+    })
     print("ATH daily result:", json.dumps(result), flush=True)
 
 
@@ -391,8 +435,8 @@ class LiveMonitor:
 
 def main():
     smart, jwt, feed = login()
-    universe = build_universe()
-    print(f"ATH universe: {len(universe)} NSE equities after ETF exclusion", flush=True)
+    universe = build_universe(smart)
+    print(f"ATH universe: {len(universe)} NSE equities after ETF + Angel intraday eligibility", flush=True)
     if os.environ.get("ATH_SEED_BASELINE", "1") == "1":
         seed_baseline(smart, universe)
 
